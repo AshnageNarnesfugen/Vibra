@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" role="img" aria-label="Vibra app icon">
+  <title>Vibra — app icon (Solar)</title>
+  <defs>
+    <linearGradient id="solar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FB923C"></stop>
+      <stop offset="0.52" stop-color="#F43F5E"></stop>
+      <stop offset="1" stop-color="#C026D3"></stop>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="1000" fill="url(#solar)"></rect>
+  <g fill="#FFFFFF" transform="translate(200,200) scale(6)">
+    <rect x="19" y="24" width="10" height="52" rx="5"></rect>
+    <rect x="32" y="38" width="10" height="38" rx="5"></rect>
+    <rect x="45" y="52" width="10" height="24" rx="5"></rect>
+    <rect x="58" y="38" width="10" height="38" rx="5"></rect>
+    <rect x="71" y="24" width="10" height="52" rx="5"></rect>
+  </g>
+</svg>

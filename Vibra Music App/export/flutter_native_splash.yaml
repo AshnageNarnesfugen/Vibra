@@ -1,0 +1,17 @@
+# flutter_native_splash — Vibra
+# OJO: flutter_native_splash solo soporta color SÓLIDO de fondo (no degradado).
+# Opción A (rápida): splash de color sólido con el símbolo blanco al centro.
+# Opción B (recomendada para el look "Solar"): splash nativo neutro + una
+#   pantalla Flutter con LinearGradient (ver SplashScreen en HANDOFF.md).
+#
+# flutter pub add dev:flutter_native_splash
+# dart run flutter_native_splash:create
+
+flutter_native_splash:
+  color: "#0A0618"            # fondo "Noche" (sólido)
+  image: assets/branding/symbol/vibra-symbol-white.png
+  android_12:
+    color: "#0A0618"
+    image: assets/branding/symbol/vibra-symbol-white.png
+  # Para Opción A (Solar sólido) usa en su lugar:
+  # color: "#F43F5E"

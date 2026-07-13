@@ -1,0 +1,24 @@
+# flutter_launcher_icons — Vibra
+# 1. Copia la carpeta export/ a tu proyecto (ej: assets/branding/).
+# 2. Pega este bloque en pubspec.yaml (o en flutter_launcher_icons.yaml).
+# 3. flutter pub add dev:flutter_launcher_icons
+# 4. dart run flutter_launcher_icons
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  # Master cuadrado full-bleed (sin transparencia → válido para iOS):
+  image_path: "assets/branding/icons/vibra-icon-1024.png"
+
+  # Android adaptive icon (foreground + background separados):
+  adaptive_icon_background: "assets/branding/android/ic_background.png"
+  adaptive_icon_foreground: "assets/branding/android/ic_foreground.png"
+  # Alternativa: usar color sólido de fondo en vez de la imagen de degradado:
+  # adaptive_icon_background: "#F43F5E"
+
+  web:
+    generate: true
+    image_path: "assets/branding/icons/vibra-icon-512.png"
+    background_color: "#0A0618"
+    theme_color: "#F43F5E"

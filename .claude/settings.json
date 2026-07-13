@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter --version)",
+      "Bash(flutter create *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "Bash(python3 -c \"import json,sys; [print\\(f'{e[\\\\\"type\\\\\"]:5} {e[\\\\\"name\\\\\"]}'\\) for e in json.load\\(sys.stdin\\)]\")",
+      "Bash(pacman -Q mpv libmpv)",
+      "Bash(grep -r \"class BackdropGroup\\\\|BackdropFilter.grouped\" /usr/lib/flutter/packages/flutter/lib/src/widgets/ 2>/dev/null | head -5)",
+      "Read(//usr/lib/flutter/packages/flutter/lib/src/**)",
+      "Bash(grep -rn \"class BackdropGroup\\\\|BackdropFilter.grouped\" /opt/flutter/packages/flutter/lib/src/ 2>/dev/null | head -5)",
+      "Read(//opt/flutter/packages/flutter/lib/src/**)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(d['name'],d['type']\\) for d in data]\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(d['path']\\) for d in data]\")",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -rn \"pushAnimated\\(\\\\s*$\\\\|const PlayerScreen\\(\\),\" lib/)",
+      "Bash(awk -F: '{print $1}')",
+      "Bash(./gradlew :app:compileReleaseKotlin)",
+      "Bash(./gradlew :app:compileReleaseKotlin --stacktrace)",
+      "Read(//opt/**)",
+      "Read(//home/dreadashes/Android/**)",
+      "Read(//home/dreadashes/.local/**)",
+      "Bash(flutter doctor *)",
+      "Bash(./gradlew --stop)",
+      "Bash(grep -n \"title,$\\\\|artist,\" lib/screens/player_screen.dart)",
+      "Bash(cd \"/home/dreadashes/Music Player Proyect\" && find ~/.pub-cache/hosted/pub.dev -maxdepth 2 -name \"just_audio-*\" -type d 2>/dev/null | head -3)",
+      "Read(//home/dreadashes/.pub-cache/hosted/pub.dev/**)",
+      "Bash(find ~ -maxdepth 5 -type d -iname \"vibra music app*\" 2>/dev/null; find \"/home/dreadashes/Music Player Proyect\" -maxdepth 3 -type d -iname \"vibra music app*\" 2>/dev/null)",
+      "Read(//home/dreadashes/**)",
+      "Bash(dart run *)",
+      "Bash(./gradlew :app:assembleRelease)",
+      "Bash(rm -f build/app/outputs/flutter-apk/Vibra-*.apk build/app/outputs/apk/release/Vibra-*.apk build/app/outputs/flutter-apk/app-release.apk)",
+      "Bash(flutter build *)",
+      "Bash(grep -n \"Stack\\(\\\\s*$\\\\|HitTestBehavior.deferToChild\" lib/screens/player_screen.dart)"
+    ]
+  }
+}

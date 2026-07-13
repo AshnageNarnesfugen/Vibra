@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/settings/settings_controller.dart';
+import '../../core/settings/ui_settings.dart';
+import '../../core/theme/layout_tokens.dart';
+import '../../services/network_quality_resolver.dart';
+import '../../widgets/glass_card.dart';
+import '../../widgets/stable_backdrop_group.dart';
+
+/// Configuración de calidad/bitrate de stream y descarga, dividido por
+/// tipo de red (WiFi vs datos móviles) — porque la mayoría de usuarios
+/// quiere alta fidelidad en WiFi pero ahorrar plan en celular. Las
+/// descargas tienen su propio nivel (no depende del tipo de red al
+/// momento de descargar; el archivo se queda offline).
+class QualitySettingsScreen extends StatelessWidget {
+  const QualitySettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = context.watch<SettingsController>();
+    final s = ctrl.value;
+    final tokens = LayoutTokensScope.of(context);
+
+    return StableBackdropGroup(
+      child: Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title: const Text('Calidad de audio y video')),
+      body: ListView(
+        padding: tokens.pagePadding(),
+        children: [
+          _Section(
+            title: 'Audio en WiFi',
+            value: s.audioQualityWifi,
+            onChanged: (v) =>
+                ctrl.update((p) => p.copyWith(audioQualityWifi: v)),
+          ),
+          SizedBox(height: tokens.gap),
+          _Section(
+            title: 'Audio en datos móviles',
+            subtitle:
+                'Por defecto media para no quemar el plan. Sube a alta '
+                'si tienes datos ilimitados.',
+            value: s.audioQualityCellular,
+            onChanged: (v) =>
+                ctrl.update((p) => p.copyWith(audioQualityCellular: v)),
+          ),
+          SizedBox(height: tokens.gap),
+          _Section(
+            title: 'Video en WiFi',
+            value: s.videoQualityWifi,
+            onChanged: (v) =>
+                ctrl.update((p) => p.copyWith(videoQualityWifi: v)),
+          ),
+          SizedBox(height: tokens.gap),
+          _Section(
+            title: 'Video en datos móviles',
+            subtitle:
+                'Default baja — 5 minutos de música video en 720p+ '
+                'consumen ~100MB.',
+            value: s.videoQualityCellular,
+            onChanged: (v) =>
+                ctrl.update((p) => p.copyWith(videoQualityCellular: v)),
+          ),
+          SizedBox(height: tokens.gap),
+          _Section(
+            title: 'Calidad de descargas',
+            subtitle:
+                'Se aplica a las canciones descargadas para reproducir '
+                'offline. Los archivos quedan en el dispositivo.',
+            value: s.downloadQuality,
+            onChanged: (v) =>
+                ctrl.update((p) => p.copyWith(downloadQuality: v)),
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final MediaQuality value;
+  final ValueChanged<MediaQuality> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = LayoutTokensScope.of(context);
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          if (subtitle != null) ...[
+            SizedBox(height: tokens.gapSm),
+            Text(
+              subtitle!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          SizedBox(height: tokens.gapSm),
+          RadioGroup<MediaQuality>(
+            groupValue: value,
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+            child: Column(
+              children: [
+                for (final q in MediaQuality.values)
+                  RadioListTile<MediaQuality>(
+                    contentPadding: EdgeInsets.zero,
+                    value: q,
+                    title: Text(q.label),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

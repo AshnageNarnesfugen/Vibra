@@ -1,0 +1,123 @@
+name: vibra
+description: "Reproductor de música con personalización profunda de la UI."
+publish_to: 'none'
+version: 1.0.9+10
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Estado
+  provider: ^6.1.2
+
+  # Persistencia
+  shared_preferences: ^2.3.2
+  path_provider: ^2.1.4
+
+  # Audio
+  just_audio: ^0.10.5
+  audio_session: ^0.2.3
+  # Notificación de reproducción + lockscreen + media buttons. Crea un
+  # foreground service en Android y expone los controles al sistema.
+  audio_service: ^0.18.18
+  # Video player para mostrar music videos de YT como fondo dinámico
+  # (opcional, behind toggle). Usa ExoPlayer en Android.
+  video_player: ^2.10.0
+  # Backend libmpv para que just_audio funcione en Linux/Windows.
+  # Requiere `mpv` instalado en el sistema.
+  just_audio_media_kit: ^2.0.6
+  media_kit_libs_linux: ^1.1.3
+
+  # Multimedia / metadata
+  on_audio_query: ^2.9.0
+  palette_generator: ^0.3.3+4
+
+  # UI / utilidades
+  image_picker: ^1.1.2
+  permission_handler: ^12.0.1
+
+  # Sensores (parallax)
+  sensors_plus: ^7.0.0
+
+  # Escaneo manual de carpetas (Linux/desktop + Android sin scoped storage)
+  file_picker: ^8.1.2
+  audio_metadata_reader: ^1.6.0
+
+  # Streaming mode (cliente InnerTube hacia YouTube Music)
+  http: ^1.2.2
+  crypto: ^3.0.5
+  webview_flutter: ^4.10.0
+  # Para abrir el navegador del sistema en el Device Code Flow de OAuth —
+  # NO usamos WebView para este path porque Google bloquea WebView en login.
+  url_launcher: ^6.3.0
+
+  # Mantiene la pantalla encendida cuando hay música reproduciéndose, así
+  # el usuario puede dejar el dispositivo en su escritorio mirando la
+  # carátula/lyrics sin que se apague por timeout del sistema.
+  wakelock_plus: ^1.2.8
+
+  # Crash reporting + error monitoring. Captura uncaught exceptions de
+  # Flutter framework, async zones y errors reportados manualmente. El
+  # DSN se inyecta via `--dart-define=SENTRY_DSN=...` para no commitearlo.
+  # Si no hay DSN configurado, init queda no-op (no envía nada). En debug
+  # builds tampoco envía — `kDebugMode` desactiva.
+  sentry_flutter: ^9.4.0
+
+  # Detección de tipo de red (WiFi / celular / sin red) para aplicar
+  # presets de calidad de audio/video distintos según el contexto. En
+  # WiFi default a alta fidelidad; en datos móviles a media para no
+  # quemar el plan del usuario.
+  connectivity_plus: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Generadores de íconos de app y splash. Solo se usan en build-time
+  # (`dart run flutter_launcher_icons` / `dart run flutter_native_splash:create`)
+  # → no incrementan el peso del APK.
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.0
+
+# ─── Branding: íconos generados por flutter_launcher_icons ───
+# Configuración del paquete; se ejecuta con `dart run flutter_launcher_icons`.
+# Master 1024×1024 + foreground/background adaptativos para Android 8+.
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/branding/icons/vibra-icon-1024.png"
+  adaptive_icon_background: "assets/branding/android/ic_background.png"
+  adaptive_icon_foreground: "assets/branding/android/ic_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/branding/icons/vibra-icon-512.png"
+    background_color: "#0A0618"
+    theme_color: "#F43F5E"
+
+# ─── Splash nativo (color sólido + símbolo en blanco) ───
+# `flutter_native_splash` solo permite color de fondo sólido. El look
+# "Solar" completo con degradado se renderiza desde Flutter al
+# arrancar; este splash es el flash que se ve mientras el engine carga.
+flutter_native_splash:
+  color: "#0A0618"
+  image: assets/branding/symbol/vibra-symbol-white.png
+  android_12:
+    color: "#0A0618"
+    image: assets/branding/symbol/vibra-symbol-white.png
+
+flutter:
+  uses-material-design: true
+  shaders:
+    - assets/shaders/aurora.frag
+    - assets/shaders/plasma.frag
+    - assets/shaders/mesh.frag
+    - assets/shaders/liquid.frag
+    - assets/shaders/holographic.frag
+  assets:
+    - assets/branding/icons/
+    - assets/branding/symbol/

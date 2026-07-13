@@ -1,0 +1,92 @@
+name: Release APK
+
+# Se dispara al empujar un tag `v*` (ej: `git tag v1.0.9 && git push --tags`).
+# Compila el APK release y crea un GitHub Release con el APK adjunto.
+#
+# Ejecución manual también disponible desde la pestaña Actions
+# (workflow_dispatch) por si querés generar un build sin tag.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag de versión (ej: v1.0.9). Solo para el nombre del release manual.'
+        required: false
+        default: 'manual'
+
+# Permiso de escritura de contenidos para poder crear el Release.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # JDK 21 — AGP/Kotlin no compilan con JDK 26; 21 es el soportado
+      # por la última AGP estable. setup-java setea JAVA_HOME, que Gradle
+      # usa (no dependemos del org.gradle.java.home local del dev).
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze (no bloquea el release, solo reporta)
+        run: flutter analyze || true
+
+      # Build del APK release. El nombre de salida ya lo renombra el
+      # build.gradle.kts a Vibra-<versionName>.apk.
+      - name: Build release APK
+        run: flutter build apk --release
+
+      # Localiza el APK con nombre de marca. Fallback al app-release.apk
+      # por si el rename fallara.
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find build/app/outputs/flutter-apk -name 'Vibra-*.apk' | head -n1)
+          if [ -z "$APK" ]; then
+            APK=$(find build/app/outputs/flutter-apk -name 'app-release.apk' | head -n1)
+          fi
+          echo "Encontrado: $APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      # Crea/actualiza el GitHub Release SOLO cuando el trigger fue un tag.
+      # softprops/action-gh-release adjunta el APK al release del tag.
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          name: Vibra ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
