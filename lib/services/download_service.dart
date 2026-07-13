@@ -6,8 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/settings/settings_controller.dart';
 import '../models/song.dart';
 import 'app_storage.dart';
+import 'mp3_transcoder.dart';
 import 'streaming/streaming_service.dart';
 import '../core/dev_log.dart';
 
@@ -28,14 +30,21 @@ import '../core/dev_log.dart';
 /// (cada ~5% para no inundar de rebuilds).
 class DownloadService extends ChangeNotifier {
   DownloadService._(this._prefs, this._streaming, this._downloadsDir,
-      Map<String, _DownloadedTrack> initial)
-      : _downloaded = initial;
+      Map<String, _DownloadedTrack> initial,
+      {SettingsController? settings})
+      : _settings = settings,
+        _downloaded = initial;
 
   static const _kKey = 'vibra.downloads.v1';
 
   final SharedPreferences? _prefs;
   final StreamingService _streaming;
   final Directory _downloadsDir;
+
+  /// Settings para leer `downloadAsMp3` en tiempo de descarga. Opcional
+  /// (tests / plataformas sin settings) — sin él, se conserva el formato
+  /// original del stream.
+  final SettingsController? _settings;
   final Map<String, _DownloadedTrack> _downloaded;
   final Map<String, double> _inProgress = {};
   final Map<String, StreamSubscription<List<int>>> _activeSubs = {};
@@ -50,7 +59,8 @@ class DownloadService extends ChangeNotifier {
       ? AppStorage.instance.isPublicMusic
       : false;
 
-  static Future<DownloadService> create(StreamingService streaming) async {
+  static Future<DownloadService> create(StreamingService streaming,
+      {SettingsController? settings}) async {
     SharedPreferences? prefs;
     try {
       prefs = await SharedPreferences.getInstance();
@@ -91,7 +101,8 @@ class DownloadService extends ChangeNotifier {
       }
     }
 
-    final svc = DownloadService._(prefs, streaming, dir, map);
+    final svc =
+        DownloadService._(prefs, streaming, dir, map, settings: settings);
     // Persistir tras la migración para guardar las rutas nuevas.
     // ignore: discarded_futures
     svc._persist();
@@ -232,9 +243,54 @@ class DownloadService extends ChangeNotifier {
       // pública que el usuario explora, un nombre entendible importa.
       // El songId va como sufijo corto para garantizar unicidad si dos
       // canciones tienen el mismo artista+título.
-      final finalPath =
-          '${_downloadsDir.path}/${_safeFileName(song)}$ext';
-      await tempFile.rename(finalPath);
+      String finalPath;
+
+      // ── Transcode a MP3 (default ON) ──
+      // El stream de YT llega como m4a/aac u opus/webm. Si el usuario
+      // tiene "Descargar como MP3" activo, lo pasamos por el plugin
+      // nativo (MediaCodec decode → LAME Java → ID3v2 con carátula).
+      // Si el transcode FALLA por lo que sea, conservamos el original —
+      // nunca perdemos una descarga completada por un fallo de conversión.
+      final wantMp3 = (_settings?.value.downloadAsMp3 ?? false) &&
+          Mp3Transcoder.isSupported;
+      if (wantMp3) {
+        // Señal a la UI de que estamos en la fase de conversión (la
+        // barra queda casi llena — el encode puede tardar ~1-2 min).
+        _inProgress[song.id] = 0.99;
+        notifyListeners();
+        finalPath = '${_downloadsDir.path}/${_safeFileName(song)}.mp3';
+        String? coverTmp;
+        try {
+          coverTmp = await _fetchCoverToTemp(song);
+          await Mp3Transcoder.transcode(
+            inputPath: tempPath,
+            outputPath: finalPath,
+            title: song.title,
+            artist: song.artist,
+            // '—' es el placeholder de album de los tracks de streaming;
+            // no lo escribimos como TALB basura.
+            album: song.album == '—' ? '' : song.album,
+            coverPath: coverTmp,
+          );
+          try {
+            await tempFile.delete();
+          } catch (_) {}
+        } catch (e) {
+          devLog('DownloadService: transcode MP3 falló para '
+              '${song.title}, conservando original: $e');
+          finalPath = '${_downloadsDir.path}/${_safeFileName(song)}$ext';
+          await tempFile.rename(finalPath);
+        } finally {
+          if (coverTmp != null) {
+            try {
+              await File(coverTmp).delete();
+            } catch (_) {}
+          }
+        }
+      } else {
+        finalPath = '${_downloadsDir.path}/${_safeFileName(song)}$ext';
+        await tempFile.rename(finalPath);
+      }
 
       _downloaded[song.id] = _DownloadedTrack(
         song: song.copyWith(uri: 'file://$finalPath'),
@@ -294,6 +350,30 @@ class DownloadService extends ChangeNotifier {
       }
       notifyListeners();
       await _persist();
+    }
+  }
+
+  /// Descarga la carátula de [song] a un archivo temporal (para incrustar
+  /// en el MP3). Intenta subir la resolución del thumbnail de YT (que
+  /// suele venir en 120px) reescribiendo el sufijo `wN-hN` a 544px.
+  /// Devuelve null si no hay URL o el fetch falla — la carátula es
+  /// opcional, nunca bloquea la descarga.
+  Future<String?> _fetchCoverToTemp(Song song) async {
+    var url = song.thumbnailUrl;
+    if (url == null || url.isEmpty) return null;
+    url = url.replaceAll(RegExp(r'w\d+-h\d+'), 'w544-h544');
+    try {
+      final res = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200 || res.bodyBytes.isEmpty) return null;
+      final safeId = song.id.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
+      final tmp = File('${_downloadsDir.path}/.$safeId.cover');
+      await tmp.writeAsBytes(res.bodyBytes);
+      return tmp.path;
+    } catch (e) {
+      devLog('DownloadService: cover fetch falló: $e');
+      return null;
     }
   }
 

@@ -27,6 +27,11 @@ class MainActivity : AudioServiceActivity() {
         // una carpeta pública visible en el explorador de archivos.
         StoragePlugin.register(flutterEngine, applicationContext)
 
+        // Transcoder a MP3 con metadata ID3 (canal `vibra/mp3`). Las
+        // descargas de YT Music pasan por aquí cuando el usuario tiene
+        // activado "Descargar como MP3".
+        Mp3TranscoderPlugin.register(flutterEngine)
+
         // Platform channel para que Dart pueda leer cookies del WebView
         // INCLUYENDO las HttpOnly. `document.cookie` desde JS NO ve las
         // HttpOnly, pero CookieManager nativo sí — y las HttpOnly son

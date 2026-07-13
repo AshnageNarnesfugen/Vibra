@@ -72,6 +72,24 @@ class QualitySettingsScreen extends StatelessWidget {
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(downloadQuality: v)),
           ),
+          SizedBox(height: tokens.gap),
+          GlassCard(
+            child: SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Descargar como MP3'),
+              subtitle: const Text(
+                'Convierte la descarga a MP3 256 kbps con metadata '
+                'incrustada (título, artista, álbum y carátula) — máxima '
+                'compatibilidad con otras apps y dispositivos. La '
+                'conversión tarda ~1-2 min por canción. Desactivado: se '
+                'guarda el stream original (m4a/opus), más rápido y sin '
+                're-compresión.',
+              ),
+              value: s.downloadAsMp3,
+              onChanged: (v) =>
+                  ctrl.update((p) => p.copyWith(downloadAsMp3: v)),
+            ),
+          ),
         ],
       ),
       ),

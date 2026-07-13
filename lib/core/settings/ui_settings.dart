@@ -205,6 +205,7 @@ class UiSettings {
     this.videoQualityWifi = MediaQuality.high,
     this.videoQualityCellular = MediaQuality.low,
     this.downloadQuality = MediaQuality.high,
+    this.downloadAsMp3 = true,
     this.floatingMiniEnabled = false,
     this.fadeOnPlayPauseEnabled = false,
     this.fadeDurationMs = 350,
@@ -317,6 +318,14 @@ class UiSettings {
   /// Calidad usada para DESCARGAR a local (offline). Default high
   /// porque el archivo se queda en el device y vale la pena el size.
   final MediaQuality downloadQuality;
+
+  /// Cuando true (default), las descargas de streaming se transcodifican
+  /// a MP3 256kbps CBR con metadata ID3 incrustada (título, artista,
+  /// álbum, carátula) — máxima compatibilidad con otras apps/dispositivos.
+  /// Cuando false, se guarda el stream original de YT (m4a/opus): mejor
+  /// calidad técnica (sin re-encode lossy→lossy) y más rápido, pero menos
+  /// portable. Solo Android (el transcoder usa MediaCodec nativo).
+  final bool downloadAsMp3;
 
   /// Mini reproductor flotante (Dynamic Island estilo) sobre el sistema.
   /// Solo Android. Requiere permiso `SYSTEM_ALERT_WINDOW` que el usuario
@@ -491,6 +500,7 @@ class UiSettings {
     MediaQuality? videoQualityWifi,
     MediaQuality? videoQualityCellular,
     MediaQuality? downloadQuality,
+    bool? downloadAsMp3,
     bool? floatingMiniEnabled,
     bool? fadeOnPlayPauseEnabled,
     int? fadeDurationMs,
@@ -555,6 +565,7 @@ class UiSettings {
       videoQualityCellular:
           videoQualityCellular ?? this.videoQualityCellular,
       downloadQuality: downloadQuality ?? this.downloadQuality,
+      downloadAsMp3: downloadAsMp3 ?? this.downloadAsMp3,
       floatingMiniEnabled: floatingMiniEnabled ?? this.floatingMiniEnabled,
       fadeOnPlayPauseEnabled:
           fadeOnPlayPauseEnabled ?? this.fadeOnPlayPauseEnabled,
@@ -637,6 +648,7 @@ class UiSettings {
         'videoQualityWifi': videoQualityWifi.name,
         'videoQualityCellular': videoQualityCellular.name,
         'downloadQuality': downloadQuality.name,
+        'downloadAsMp3': downloadAsMp3,
         'floatingMiniEnabled': floatingMiniEnabled,
         'fadeOnPlayPauseEnabled': fadeOnPlayPauseEnabled,
         'fadeDurationMs': fadeDurationMs,
@@ -720,6 +732,7 @@ class UiSettings {
         (e) => e.name == m['downloadQuality'],
         orElse: () => MediaQuality.high,
       ),
+      downloadAsMp3: m['downloadAsMp3'] as bool? ?? true,
       floatingMiniEnabled: m['floatingMiniEnabled'] as bool? ?? false,
       fadeOnPlayPauseEnabled:
           m['fadeOnPlayPauseEnabled'] as bool? ?? false,

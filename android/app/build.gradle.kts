@@ -107,3 +107,10 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // jump3r: port Java completo de LAME 3.98 (encoder MP3). Se usa en
+    // Mp3TranscoderPlugin para las descargas "como MP3". Java puro →
+    // cero NDK, compila para todos los ABIs. LGPL (linkado dinámico).
+    implementation("de.sciss:jump3r:1.0.5")
+}

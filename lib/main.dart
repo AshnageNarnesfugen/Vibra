@@ -145,7 +145,7 @@ Future<void> main() async {
   // los descarta del índice automáticamente al cargar.
   DownloadService? downloads;
   try {
-    downloads = await DownloadService.create(streaming)
+    downloads = await DownloadService.create(streaming, settings: settings)
         .timeout(const Duration(seconds: 3));
   } catch (e) {
     devLog('DownloadService load failed: $e');
