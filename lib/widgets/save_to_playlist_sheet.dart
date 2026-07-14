@@ -141,7 +141,13 @@ class _SaveToPlaylistSheetState extends State<_SaveToPlaylistSheet> {
               ConstrainedBox(
                 constraints: BoxConstraints(
                     maxHeight: MediaQuery.sizeOf(context).height * 0.5),
-                child: ListView.separated(
+                // Material transparente ancestro para que los ListTile
+                // pinten sus splashes (el sheet es un Container con color,
+                // que sino ocultaría el efecto y dispara la assertion de
+                // debug de ListTile).
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: playlists.length,
                   separatorBuilder: (_, _) => Divider(
@@ -176,6 +182,7 @@ class _SaveToPlaylistSheetState extends State<_SaveToPlaylistSheet> {
                       trailing: const Icon(Icons.add_rounded),
                     );
                   },
+                ),
                 ),
               ),
           ],

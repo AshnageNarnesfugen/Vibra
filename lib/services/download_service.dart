@@ -119,7 +119,16 @@ class DownloadService extends ChangeNotifier {
     try {
       final src = File(t.path);
       if (!await src.exists()) return t;
-      final name = t.path.split('/').last;
+      var name = t.path.split('/').last;
+      // Los archivos viejos se llamaban `yt:<id>.ext` — el `:` es válido
+      // en interno (ext4) pero INVÁLIDO en externo (FAT/sdcardfs). Al
+      // migrar hay que sanear el nombre o el copy/rename falla con
+      // "Operation not permitted". Reconstruimos un nombre legible desde
+      // la metadata de la canción + la extensión original.
+      final ext = name.contains('.') ? name.substring(name.lastIndexOf('.')) : '';
+      if (name.contains(':')) {
+        name = '${_safeFileName(t.song)}$ext';
+      }
       final destPath = '${targetDir.path}/$name';
       // rename() cross-filesystem puede fallar (interno → externo son FS
       // distintos). Intentamos rename y si falla copiamos + borramos.
@@ -161,6 +170,15 @@ class DownloadService extends ChangeNotifier {
   String? localPath(String songId) => _downloaded[songId]?.path;
   Song? metadataOf(String songId) => _downloaded[songId]?.song;
 
+  /// Id saneado para nombres de archivo temporales. Los songId de
+  /// streaming son `yt:<videoId>` y el `:` es INVÁLIDO en el sistema de
+  /// archivos externo de Android (FAT/sdcardfs) → "Operation not
+  /// permitted" al crear el .part. Reemplaza todo lo no-alfanumérico por
+  /// `_`. Antes no importaba porque las descargas iban a interno (ext4),
+  /// que sí permite `:`.
+  static String _safeTempId(String songId) =>
+      songId.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
+
   /// Progreso de una descarga en curso, o `null` si no se está descargando.
   double? progressOf(String songId) => _inProgress[songId];
   bool isDownloading(String songId) => _inProgress.containsKey(songId);
@@ -191,7 +209,7 @@ class DownloadService extends ChangeNotifier {
       final url = await _streaming.resolveStreamUrl(song.streamingId!);
       // YouTube Music sirve audio típicamente como webm/opus o m4a/aac.
       // Inferimos la extensión del Content-Type real para reproducir bien.
-      final tempPath = '${_downloadsDir.path}/${song.id}.part';
+      final tempPath = '${_downloadsDir.path}/${_safeTempId(song.id)}.part';
       final tempFile = File(tempPath);
       if (await tempFile.exists()) await tempFile.delete();
 
@@ -312,7 +330,7 @@ class DownloadService extends ChangeNotifier {
       _activeSubs.remove(song.id);
       // Limpia el .part parcial.
       try {
-        final part = File('${_downloadsDir.path}/${song.id}.part');
+        final part = File('${_downloadsDir.path}/${_safeTempId(song.id)}.part');
         if (await part.exists()) await part.delete();
       } catch (_) {}
       notifyListeners();
@@ -326,7 +344,7 @@ class DownloadService extends ChangeNotifier {
     await sub?.cancel();
     _inProgress.remove(songId);
     try {
-      final part = File('${_downloadsDir.path}/$songId.part');
+      final part = File('${_downloadsDir.path}/${_safeTempId(songId)}.part');
       if (await part.exists()) await part.delete();
     } catch (_) {}
     notifyListeners();

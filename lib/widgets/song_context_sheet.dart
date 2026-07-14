@@ -374,11 +374,19 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon),
-      title: Text(label),
+    // Material transparente: el sheet envuelve todo en un Container con
+    // color de fondo, y ListTile necesita un Material ancestro donde
+    // pintar sus ink splashes. Sin esto Flutter tira la assertion
+    // "ListTile background color or ink splashes may be invisible" en
+    // debug (inocua pero spamea el log) y los splashes no se ven.
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(icon),
+        title: Text(label),
+      ),
     );
   }
 }
