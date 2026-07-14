@@ -5,6 +5,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.webkit.CookieManager
+import android.webkit.WebStorage
+import android.webkit.WebViewDatabase
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -49,6 +51,39 @@ class MainActivity : AudioServiceActivity() {
                         }
                         val cookies = CookieManager.getInstance().getCookie(url)
                         result.success(cookies)
+                    }
+                    // Limpieza total del estado web (cookies + WebStorage +
+                    // form data). Un intento de login a medias deja a Google
+                    // en un estado raro ("verifica que eres tú" perpetuo) que
+                    // rompe los intentos siguientes — arrancar cada login con
+                    // sesión limpia es lo que hace OpenTune y es parte de por
+                    // qué su WebView funciona siempre.
+                    "clearAll" -> {
+                        try {
+                            WebStorage.getInstance().deleteAllData()
+                            WebViewDatabase.getInstance(applicationContext).apply {
+                                clearFormData()
+                                clearHttpAuthUsernamePassword()
+                            }
+                        } catch (e: Throwable) {
+                            android.util.Log.w("VibraCookies",
+                                "clearAll web storage failed: $e")
+                        }
+                        val cm = CookieManager.getInstance()
+                        cm.removeSessionCookies {
+                            cm.removeAllCookies {
+                                cm.flush()
+                                cm.setAcceptCookie(true)
+                                result.success(null)
+                            }
+                        }
+                    }
+                    // Persiste las cookies del WebView a disco. Sin flush,
+                    // las cookies de un login recién completado pueden vivir
+                    // solo en RAM y perderse si el proceso muere pronto.
+                    "flush" -> {
+                        CookieManager.getInstance().flush()
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }

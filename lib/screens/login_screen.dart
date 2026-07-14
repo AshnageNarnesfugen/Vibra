@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/theme/layout_tokens.dart';
@@ -13,17 +14,25 @@ import '../widgets/glass_card.dart';
 import 'oauth_device_code_screen.dart';
 import '../core/dev_log.dart';
 
+/// Channel nativo para el estado web del WebView (Android). Métodos:
+///   - getCookies(url): cookies INCLUYENDO HttpOnly (document.cookie no
+///     las ve, y las HttpOnly — SID, __Secure-3PSID — son justo las que
+///     Google necesita para reconocer una sesión).
+///   - clearAll: cookies + WebStorage + form data → login siempre limpio.
+///   - flush: persiste cookies a disco tras un login exitoso.
+const _cookieChannel = MethodChannel('vibra/cookies');
+
 /// Login a YouTube Music. Dos vías:
-///   - **WebView**: abre el formulario de Google (Android/iOS/macOS), espera
-///     que aterricemos en `music.youtube.com` y captura las cookies con el
-///     `WebViewCookieManager`. Esto es lo que hace OpenTune.
+///   - **WebView** (recomendado): flujo calcado de OpenTune
+///     (github.com/Arturo254/OpenTune). Abre el login web clásico de Google
+///     (`ServiceLogin?continue=music.youtube.com`) con el user-agent POR
+///     DEFECTO del WebView, fusiona las cookies de los 3 dominios de
+///     YouTube y cosecha `VISITOR_DATA` + `DATASYNC_ID` del propio ytcfg
+///     de la página logueada.
 ///   - **Paste manual**: para Linux/Windows o cuando WebView falla. El
-///     usuario abre `music.youtube.com` en su navegador, copia la cookie
-///     (DevTools → Application → Cookies) y la pega aquí.
-///
-/// En ambos casos, tras capturar la cookie hacemos un GET a `music.youtube.com`
-/// para extraer el `visitorData` (es un id que personaliza las respuestas
-/// InnerTube; sin él el feed es genérico).
+///     usuario abre `music.youtube.com` en su navegador, copia el header
+///     Cookie (DevTools → Network) y lo pega aquí. En este caso los IDs de
+///     sesión se extraen con un GET a `music.youtube.com`.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -39,11 +48,15 @@ class _LoginScreenState extends State<LoginScreen> {
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
   Future<void> _launchWebView() async {
-    final result = await Navigator.of(context).push<String>(
+    final result = await Navigator.of(context).push<_WebViewLoginResult>(
       MaterialPageRoute(builder: (_) => const _WebViewLogin()),
     );
-    if (result == null || result.isEmpty) return;
-    await _commit(result);
+    if (result == null || result.cookie.isEmpty) return;
+    await _commit(
+      result.cookie,
+      visitorData: result.visitorData,
+      dataSyncId: result.dataSyncId,
+    );
   }
 
   /// Flujo Device Code (OAuth, recomendado). Sin WebView, sin cookies:
@@ -122,7 +135,11 @@ class _LoginScreenState extends State<LoginScreen> {
     await _commit(cookie);
   }
 
-  Future<void> _commit(String cookie) async {
+  Future<void> _commit(
+    String cookie, {
+    String? visitorData,
+    String? dataSyncId,
+  }) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -154,20 +171,29 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       svc.setAuth(auth);
 
-      // Capturamos visitorData + dataSyncId con la cookie ya cargada en el
-      // service. dataSyncId es la pieza clave de personalización: sin él,
-      // YT Music devuelve home genérico aunque la cookie sea válida.
-      final ids = await svc.fetchSessionIds();
+      // IDs de sesión (visitorData + dataSyncId — la pieza clave de
+      // personalización: sin dataSyncId YT Music devuelve home genérico
+      // aunque la cookie sea válida). Si el WebView ya los cosechó del
+      // ytcfg de la página logueada usamos esos: corresponden EXACTAMENTE
+      // a la sesión recién creada. Solo con paste manual (o si la cosecha
+      // falló) los extraemos del HTML con la cookie ya cargada.
+      var vd = visitorData;
+      var ds = dataSyncId;
+      if (vd == null || ds == null) {
+        final ids = await svc.fetchSessionIds();
+        vd ??= ids.visitorData;
+        ds ??= ids.dataSyncId;
+      }
       svc.setAuth(YtMusicAuth(
         cookie: cookie,
-        visitorData: ids.visitorData,
-        dataSyncId: ids.dataSyncId,
+        visitorData: vd,
+        dataSyncId: ds,
       ));
 
       settingsCtrl.update((s) => s.copyWith(
             ytMusicCookie: cookie,
-            ytMusicVisitorData: ids.visitorData,
-            ytMusicDataSyncId: ids.dataSyncId,
+            ytMusicVisitorData: vd,
+            ytMusicDataSyncId: ds,
           ));
 
       if (!mounted) return;
@@ -186,6 +212,14 @@ class _LoginScreenState extends State<LoginScreen> {
     context.read<SettingsController>().update(
           (s) => s.copyWith(clearYtMusicAuth: true),
         );
+    // Limpiar también el estado del WebView (cookies, WebStorage) para que
+    // el próximo login arranque con sesión de Google fresca — mismo patrón
+    // que el clearWebAuthSession de OpenTune.
+    try {
+      await _cookieChannel.invokeMethod('clearAll');
+    } catch (_) {
+      // Canal no disponible en esta plataforma — no bloquea el logout.
+    }
     if (!mounted) return;
     Navigator.of(context).pop(false);
   }
@@ -287,18 +321,43 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(height: tokens.gap),
           ],
           if (!isLoggedIn) ...[
-            // ─── Método recomendado: pegar cookie ───
-            // Razón del reorden (era OAuth en 1.0.0): Google cerró desde
-            // finales de 2024 el flow OAuth del YT TV client_id contra
-            // los endpoints internos de music.youtube.com. Resultado:
-            // el login OAuth ahora "funciona" (la app guarda tokens)
-            // pero TODA request a la API retorna 400. El método cookie
-            // sigue funcionando y es el único path confiable hoy.
-            FilledButton.icon(
-              onPressed: _busy ? null : _pasteManually,
-              icon: const Icon(Icons.content_paste_rounded),
-              label: const Text('Pegar cookie desde el navegador'),
-            ),
+            // ─── Método recomendado: login con Google embebido ───
+            // Flujo calcado de OpenTune: el login web clásico de Google
+            // (ServiceLogin → music.youtube.com) SÍ funciona en WebView
+            // con user-agent por defecto. Lo que Google bloquea son los
+            // flows OAuth embebidos (cerrados desde fines de 2024, mismo
+            // issue que ytmusicapi) y los UA falsificados que no cuadran
+            // con el TLS fingerprint del WebView.
+            if (_webViewSupported) ...[
+              FilledButton.icon(
+                onPressed: _busy ? null : _launchWebView,
+                icon: const Icon(Icons.login_rounded),
+                label: const Text('Iniciar sesión con Google'),
+              ),
+              SizedBox(height: tokens.gapSm),
+              GlassCard(
+                padding: tokens.tilePadding(),
+                child: Text(
+                  'Se abre el login normal de Google dentro de la app y al '
+                  'terminar Vibra captura la sesión automáticamente. Es el '
+                  'mismo método que usan OpenTune e InnerTune.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              SizedBox(height: tokens.gap),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _pasteManually,
+                icon: const Icon(Icons.content_paste_rounded),
+                label: const Text('Pegar cookie desde el navegador'),
+              ),
+            ] else
+              // Desktop (Linux/Windows): sin WebView, el paste es el
+              // método primario.
+              FilledButton.icon(
+                onPressed: _busy ? null : _pasteManually,
+                icon: const Icon(Icons.content_paste_rounded),
+                label: const Text('Pegar cookie desde el navegador'),
+              ),
             SizedBox(height: tokens.gapSm),
             GlassCard(
               padding: tokens.tilePadding(),
@@ -356,7 +415,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           SizedBox(width: tokens.gapSm),
                           Expanded(
                             child: Text(
-                              'No recomendados — Google limitó ambos',
+                              'No recomendado — Google lo limitó',
                               style: Theme.of(context).textTheme.titleSmall,
                             ),
                           ),
@@ -366,10 +425,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       Text(
                         'OAuth: funciona el login pero las requests a la '
                         'API retornan 400 desde finales de 2024 (mismo '
-                        'issue que ytmusicapi).\n\n'
-                        'WebView: Google detecta navegador embebido y '
-                        'bloquea con "este navegador no es seguro" en '
-                        'la mayoría de cuentas con 2FA.',
+                        'issue que ytmusicapi).',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -382,13 +438,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   label: const Text('Iniciar sesión OAuth (limitado)'),
                 ),
                 SizedBox(height: tokens.gapSm),
-                if (_webViewSupported)
-                  TextButton.icon(
-                    onPressed: _busy ? null : _launchWebView,
-                    icon: const Icon(Icons.warning_amber_rounded),
-                    label: const Text(
-                        'Probar login con WebView (experimental)'),
-                  ),
               ],
             ),
           ] else
@@ -441,9 +490,41 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// Pantalla embebida con WebView de Google. Dejamos que el usuario complete
-/// el login normal; cuando el browser aterriza en `music.youtube.com` (o
-/// `youtube.com`), capturamos las cookies y devolvemos el string al caller.
+/// Resultado del login por WebView: cookie fusionada + IDs de sesión
+/// cosechados del ytcfg de la propia página logueada (más fiables que un
+/// fetch separado porque corresponden EXACTAMENTE a la sesión recién creada).
+class _WebViewLoginResult {
+  const _WebViewLoginResult({
+    required this.cookie,
+    this.visitorData,
+    this.dataSyncId,
+  });
+
+  final String cookie;
+  final String? visitorData;
+  final String? dataSyncId;
+}
+
+/// Pantalla embebida con el login web de Google — port fiel del
+/// `LoginScreen.kt` de OpenTune (github.com/Arturo254/OpenTune), que es el
+/// flujo que la familia InnerTune lleva años usando de forma estable:
+///
+///   1. Estado web LIMPIO antes de empezar (cookies + WebStorage). Un
+///      intento a medias deja a Google en modo "verifica que eres tú"
+///      perpetuo que rompe los logins siguientes.
+///   2. URL `ServiceLogin?continue=music.youtube.com` — el flujo web
+///      clásico. Sin `service=youtube` ni arrancar en `/signin` (activan
+///      otros paths de verificación).
+///   3. User-agent POR DEFECTO del WebView. Falsificar el UA (nuestro viejo
+///      "Firefox en Linux") es contraproducente: el TLS fingerprint sigue
+///      siendo el del WebView de Android y la discrepancia es justo lo que
+///      dispara el "este navegador no es seguro".
+///   4. Cookies de terceros aceptadas — el redirect accounts.google.com →
+///      music.youtube.com setea cookies cross-domain.
+///   5. En cada página de youtube.com: cosechar VISITOR_DATA + DATASYNC_ID
+///      del ytcfg y fusionar cookies de los 3 dominios (music/www/bare).
+///   6. Éxito solo cuando la cookie tiene SAPISID + SID (sesión completa);
+///      hasta entonces el WebView sigue abierto y reintenta solo.
 class _WebViewLogin extends StatefulWidget {
   const _WebViewLogin();
 
@@ -453,23 +534,21 @@ class _WebViewLogin extends StatefulWidget {
 
 class _WebViewLoginState extends State<_WebViewLogin> {
   late final WebViewController _controller;
+
+  static const _loginUrl = 'https://accounts.google.com/ServiceLogin'
+      '?continue=https%3A%2F%2Fmusic.youtube.com';
+
   bool _completed = false;
   bool _loading = true;
-  bool _onMusicYouTube = false;
+  bool _onYouTube = false;
+  String? _visitorData;
+  String? _dataSyncId;
 
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      // Firefox desktop UA. Probado: Google es mucho más permisivo aceptando
-      // login con esta cadena que con cualquier "Chrome ; wv" o "Android".
-      // Si pones Chrome desktop con SemiCadena Mobile, Google bloquea entre
-      // email y password con "no podemos verificar este navegador".
-      ..setUserAgent(
-        'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) '
-        'Gecko/20100101 Firefox/121.0',
-      )
       ..setBackgroundColor(const Color(0xFF101015))
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -481,66 +560,166 @@ class _WebViewLoginState extends State<_WebViewLogin> {
           // si bloqueamos algo se rompe el flow.
           onNavigationRequest: (_) => NavigationDecision.navigate,
         ),
-      )
-      ..loadRequest(Uri.parse(
-        // Sin `passive=true` (cambia el flow de auth) y empezando en /signin
-        // (más natural que /ServiceLogin) para que Google no marque flags
-        // de "antiguo método" en su lado.
-        'https://accounts.google.com/signin'
-        '?service=youtube&hl=en'
-        '&continue=https%3A%2F%2Fmusic.youtube.com%2F',
-      ));
+      );
+    _acceptThirdPartyCookies();
+    _startFresh();
+  }
+
+  /// Google setea cookies cruzadas entre accounts.google.com y los dominios
+  /// de YouTube durante los redirects del login. Sin third-party cookies el
+  /// WebView descarta parte de la sesión → cookie incompleta → 401.
+  void _acceptThirdPartyCookies() {
+    final platformController = _controller.platform;
+    final platformCookies = WebViewCookieManager().platform;
+    if (platformController is AndroidWebViewController &&
+        platformCookies is AndroidWebViewCookieManager) {
+      platformCookies.setAcceptThirdPartyCookies(platformController, true);
+    }
+  }
+
+  /// Port de `resetAuthWebViewSession` de OpenTune: cada intento de login
+  /// arranca con el estado web limpio.
+  Future<void> _startFresh() async {
+    try {
+      await _cookieChannel.invokeMethod('clearAll');
+    } catch (_) {
+      // Canal no disponible (iOS/macOS) — limpiamos lo que webview_flutter
+      // expone y seguimos.
+      try {
+        await WebViewCookieManager().clearCookies();
+      } catch (_) {}
+    }
+    await _controller.loadRequest(Uri.parse(_loginUrl));
   }
 
   Future<void> _onPageFinished(String url) async {
     if (mounted) setState(() => _loading = false);
     if (_completed) return;
-    final uri = Uri.parse(url);
-    final isMusic = uri.host == 'music.youtube.com';
-    if (mounted) setState(() => _onMusicYouTube = isMusic);
-    if (!isMusic) return;
+    final host = Uri.tryParse(url)?.host ?? '';
+    final isYouTube = host == 'music.youtube.com' ||
+        host == 'www.youtube.com' ||
+        host == 'youtube.com';
+    if (mounted) setState(() => _onYouTube = isYouTube);
+    if (!isYouTube) return;
+
+    await _harvestSessionIds();
     await _captureCookies();
+    // music.youtube.com es una SPA: dispara UN solo onPageFinished y las
+    // cookies de sesión pueden asentarse un instante después del redirect.
+    // Reintentos cortos en vez de un delay fijo único.
+    for (final delay in const [Duration(seconds: 1), Duration(seconds: 3)]) {
+      if (_completed || !mounted) return;
+      await Future.delayed(delay);
+      if (_completed || !mounted) return;
+      await _harvestSessionIds();
+      await _captureCookies();
+    }
   }
 
-  /// Channel nativo para leer cookies del WebView incluyendo HttpOnly.
-  /// `document.cookie` desde JS NO ve las HttpOnly (SID, __Secure-3PSID,
-  /// HSID, SSID, etc.) — y esas son exactamente las que Google necesita
-  /// para reconocer una sesión. Sin esto el login terminaba siempre con
-  /// cookie incompleta y todas las requests caían en 401.
-  static const _cookieChannel = MethodChannel('vibra/cookies');
-
-  Future<void> _captureCookies() async {
-    if (_completed) return;
-    // Pequeño delay para que music.youtube.com termine de asentar cookies
-    // tras el redirect del login.
-    await Future.delayed(const Duration(milliseconds: 800));
-    try {
-      // 1) Intento prioritario: CookieManager nativo (incluye HttpOnly).
-      String? cookie;
+  /// Igual que OpenTune: leer `VISITOR_DATA` y `DATASYNC_ID` del
+  /// `yt.config_` de la página ya logueada.
+  Future<void> _harvestSessionIds() async {
+    Future<String?> eval(String key) async {
       try {
-        cookie = await _cookieChannel.invokeMethod<String>(
-          'getCookies',
-          {'url': 'https://music.youtube.com'},
-        );
-      } on PlatformException catch (e) {
-        devLog('[YTM] native cookie channel failed: $e');
-      }
-
-      // 2) Fallback: document.cookie (incompleto, sin HttpOnly).
-      if (cookie == null || cookie.isEmpty) {
         final raw = await _controller.runJavaScriptReturningResult(
-          'document.cookie',
+          "(function(){try{"
+          "var c=window.yt&&window.yt.config_;"
+          "if(c&&c['$key'])return c['$key'];"
+          "var g=window.ytcfg;"
+          "if(g&&g.get)return g.get('$key')||'';"
+          "return ''}catch(e){return ''}})()",
         );
+        var s = raw is String ? raw : raw.toString();
+        // Android devuelve el resultado JSON-quoted ("\"abc\"").
+        if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+          s = s.substring(1, s.length - 1);
+        }
+        if (s.isEmpty || s == 'null') return null;
+        return s;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final vd = await eval('VISITOR_DATA');
+    if (vd != null) _visitorData = vd;
+    var ds = await eval('DATASYNC_ID');
+    if (ds != null) {
+      // El HTML trae "123||suffix" — solo la parte antes de `||` es el id
+      // que user.onBehalfOfUser espera (mismo strip que OpenTune).
+      final cut = ds.indexOf('||');
+      if (cut >= 0) ds = ds.substring(0, cut);
+      if (ds.isNotEmpty) _dataSyncId = ds;
+    }
+  }
+
+  /// Fusión de cookies de los tres dominios de YouTube, calcada del
+  /// `mergeYouTubeCookies` de OpenTune. Las HttpOnly (SID, __Secure-3PSID…)
+  /// solo son visibles vía CookieManager nativo — document.cookie no las ve,
+  /// y son exactamente las que Google necesita para reconocer la sesión.
+  Future<String?> _mergedCookies() async {
+    final parts = <String, String>{};
+    for (final url in const [
+      'https://music.youtube.com',
+      'https://www.youtube.com',
+      'https://youtube.com',
+    ]) {
+      String? raw;
+      try {
+        raw = await _cookieChannel
+            .invokeMethod<String>('getCookies', {'url': url});
+      } catch (e) {
+        devLog('[YTM] native cookie channel failed: $e');
+        break;
+      }
+      if (raw == null || raw.isEmpty) continue;
+      for (final part in raw.split(';')) {
+        final t = part.trim();
+        final eq = t.indexOf('=');
+        if (eq <= 0) continue;
+        final name = t.substring(0, eq).trim();
+        if (name.isEmpty) continue;
+        parts[name] = t.substring(eq + 1).trim();
+      }
+    }
+    if (parts.isEmpty) return null;
+    return parts.entries.map((e) => '${e.key}=${e.value}').join('; ');
+  }
+
+  Future<void> _captureCookies({bool manual = false}) async {
+    if (_completed) return;
+    try {
+      var cookie = await _mergedCookies();
+      // Fallback sin canal nativo: document.cookie (incompleto, sin
+      // HttpOnly — puede bastar en iOS/macOS donde WKWebView comparte).
+      if (cookie == null || cookie.isEmpty) {
+        final raw = await _controller
+            .runJavaScriptReturningResult('document.cookie');
         cookie = raw is String ? raw.replaceAll('"', '') : raw.toString();
       }
 
-      if (cookie.contains('SAPISID') ||
-          cookie.contains('__Secure-3PAPISID')) {
-        _completed = true;
-        devLog('[YTM] webview captured cookie (len=${cookie.length})');
-        if (!mounted) return;
-        Navigator.of(context).pop(cookie);
-      }
+      final auth = YtMusicAuth(cookie: cookie);
+      // La captura automática exige sesión COMPLETA (SAPISID + SID) — hasta
+      // entonces seguimos esperando sin cerrar el WebView. Con el botón
+      // manual basta SAPISID: _commit reporta exactamente qué falta.
+      final ready = manual ? auth.isUsable : auth.isCompleteCookieSession;
+      if (!ready) return;
+
+      _completed = true;
+      // Persistir cookies del WebView a disco antes de salir — un login
+      // recién hecho puede vivir solo en RAM.
+      try {
+        await _cookieChannel.invokeMethod('flush');
+      } catch (_) {}
+      devLog('[YTM] webview cookie capturada (len=${cookie.length}, '
+          'visitorData=${_visitorData != null ? "sí" : "no"}, '
+          'dataSyncId=${_dataSyncId != null ? "sí" : "no"})');
+      if (!mounted) return;
+      Navigator.of(context).pop(_WebViewLoginResult(
+        cookie: cookie,
+        visitorData: _visitorData,
+        dataSyncId: _dataSyncId,
+      ));
     } catch (e) {
       devLog('[YTM] capture cookies error: $e');
     }
@@ -554,9 +733,9 @@ class _WebViewLoginState extends State<_WebViewLogin> {
         actions: [
           // Botón explícito de "ya estoy dentro" — si la captura automática
           // falla por timing, el usuario puede confirmar manualmente.
-          if (_onMusicYouTube)
+          if (_onYouTube)
             TextButton(
-              onPressed: _captureCookies,
+              onPressed: () => _captureCookies(manual: true),
               child: const Text('Confirmar'),
             ),
           IconButton(
@@ -569,8 +748,7 @@ class _WebViewLoginState extends State<_WebViewLogin> {
       body: Stack(
         children: [
           WebViewWidget(controller: _controller),
-          if (_loading)
-            const LinearProgressIndicator(minHeight: 2),
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
         ],
       ),
     );

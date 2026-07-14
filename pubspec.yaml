@@ -1,7 +1,7 @@
 name: vibra
 description: "Reproductor de música con personalización profunda de la UI."
 publish_to: 'none'
-version: 1.2.1+14
+version: 1.2.2+15
 
 environment:
   sdk: ^3.11.5
@@ -51,6 +51,11 @@ dependencies:
   http: ^1.2.2
   crypto: ^3.0.5
   webview_flutter: ^4.10.0
+  # Dependencia directa (ya era transitiva) para poder llamar
+  # setAcceptThirdPartyCookies en el login de Google: durante el redirect
+  # accounts.google.com → music.youtube.com las cookies de sesión se setean
+  # cross-domain y sin third-party cookies el WebView las descarta.
+  webview_flutter_android: ^4.10.0
   # Para abrir el navegador del sistema en el Device Code Flow de OAuth —
   # NO usamos WebView para este path porque Google bloquea WebView en login.
   url_launcher: ^6.3.0
