@@ -1222,7 +1222,14 @@ class _PlayerPanel extends StatelessWidget {
     // toggle está OFF, muestra SongThumbnail clásico.
     // RepaintBoundary aísla el coste de repintado del video/imagen del
     // resto del player (transport controls, scrubber, etc.).
-    final cover = RepaintBoundary(child: _CoverWithVideoToggle(song: song));
+    // Layout horizontal: el botón de fullscreen va arriba-izquierda para
+    // no quedar tapado por la _HorizontalControlsCard del fondo.
+    final cover = RepaintBoundary(
+      child: _CoverWithVideoToggle(
+        song: song,
+        fullscreenButtonAtTopLeft: true,
+      ),
+    );
 
     final title = MarqueeText(
       song.title,
@@ -1826,9 +1833,18 @@ class _HorizontalControlsCard extends StatelessWidget {
 /// video — sin esto al usuario le aparecía/desaparecía un toggle según el
 /// resultado tardío del check (mala UX).
 class _CoverWithVideoToggle extends StatelessWidget {
-  const _CoverWithVideoToggle({required this.song});
+  const _CoverWithVideoToggle({
+    required this.song,
+    this.fullscreenButtonAtTopLeft = false,
+  });
 
   final Song song;
+
+  /// Posición del botón de pantalla completa. En el layout HORIZONTAL la
+  /// `_HorizontalControlsCard` se monta al fondo del cover y tapaba el
+  /// botón abajo-derecha → ahí lo movemos arriba-izquierda. En portrait
+  /// los controles van debajo del cover, así que abajo-derecha está libre.
+  final bool fullscreenButtonAtTopLeft;
 
   @override
   Widget build(BuildContext context) {
@@ -1854,16 +1870,17 @@ class _CoverWithVideoToggle extends StatelessWidget {
     // decidimos qué media renderizar según el flag.
     if (!showVideo) return SongThumbnail(song: song);
 
-    // Video activo: cover de video + botón de pantalla completa abajo-
-    // derecha. El botón SOLO aparece cuando se muestra video (no en
-    // modo carátula estática).
+    // Video activo: cover de video + botón de pantalla completa. El botón
+    // SOLO aparece cuando se muestra video (no en modo carátula estática).
     return Stack(
       fit: StackFit.expand,
       children: [
         const MusicVideoCover(),
         Positioned(
-          right: 10,
-          bottom: 10,
+          left: fullscreenButtonAtTopLeft ? 10 : null,
+          right: fullscreenButtonAtTopLeft ? null : 10,
+          top: fullscreenButtonAtTopLeft ? 10 : null,
+          bottom: fullscreenButtonAtTopLeft ? null : 10,
           child: _FullscreenVideoButton(),
         ),
       ],
