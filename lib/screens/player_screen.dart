@@ -24,8 +24,10 @@ import '../widgets/playback_params_sheet.dart';
 import '../widgets/responsive_song_grid.dart';
 import '../widgets/song_thumbnail.dart';
 
+import '../core/animations/page_transitions.dart';
 import 'artist_screen.dart';
 import 'home_screen.dart';
+import 'video_fullscreen_screen.dart';
 
 /// Vista del reproductor con dos modos:
 ///   - Vertical / pantallas estrechas → cover + metadata + transport apilados,
@@ -1850,7 +1852,61 @@ class _CoverWithVideoToggle extends StatelessWidget {
     // El toggle Cover ↔ Video ya no se monta encima de la portada — vive
     // en el AppBar junto a los botones de cola y letra. Aquí solo
     // decidimos qué media renderizar según el flag.
-    return showVideo ? const MusicVideoCover() : SongThumbnail(song: song);
+    if (!showVideo) return SongThumbnail(song: song);
+
+    // Video activo: cover de video + botón de pantalla completa abajo-
+    // derecha. El botón SOLO aparece cuando se muestra video (no en
+    // modo carátula estática).
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const MusicVideoCover(),
+        Positioned(
+          right: 10,
+          bottom: 10,
+          child: _FullscreenVideoButton(),
+        ),
+      ],
+    );
+  }
+}
+
+/// Botón que abre el music video a pantalla completa con controles.
+/// Vive abajo-derecha del cover cuando hay video activo.
+class _FullscreenVideoButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          final s = UiSettingsScope.of(context);
+          Navigator.of(context, rootNavigator: true).pushAnimated(
+            const VideoFullscreenScreen(),
+            style: s.transitionStyle,
+            durationMs: s.transitionDurationMs,
+          );
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: const Icon(
+            Icons.fullscreen_rounded,
+            size: 22,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
   }
 }
 

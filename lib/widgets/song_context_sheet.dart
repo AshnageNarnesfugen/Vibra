@@ -309,16 +309,19 @@ class _SongContextSheet extends StatelessWidget {
         onTap: () => _deleteDownloads(context, service, streamable),
       );
     }
-    final anyDownloading =
-        streamable.any((s) => service.isDownloading(s.id));
+    // "En cola" cubre tanto la descarga activa como las pendientes que
+    // esperan turno. Con la cola secuencial, encolar un tema que ya está
+    // en cola es no-op; reflejamos ese estado en el label.
+    final anyQueued =
+        streamable.any((s) => service.isQueued(s.id));
     return _Action(
-      icon: anyDownloading
+      icon: anyQueued
           ? Icons.downloading_rounded
           : Icons.download_rounded,
-      label: anyDownloading
-          ? 'Descargando…'
+      label: anyQueued
+          ? 'En cola…'
           : (_single ? 'Descargar para offline' : 'Descargar todas'),
-      onTap: anyDownloading
+      onTap: anyQueued
           ? _noop
           : () => _startDownloads(context, service, streamable),
     );

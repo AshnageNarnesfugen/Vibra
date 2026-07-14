@@ -49,6 +49,35 @@ class DownloadService extends ChangeNotifier {
   final Map<String, double> _inProgress = {};
   final Map<String, StreamSubscription<List<int>>> _activeSubs = {};
 
+  /// Cola de descargas PENDIENTES (aún no arrancadas). Se procesan de a
+  /// una — el transcode a MP3 es CPU-intensivo, correr varias en paralelo
+  /// haría thrashing. FIFO: el orden en que el usuario las encoló.
+  final List<Song> _queue = [];
+
+  /// Canción que se está descargando AHORA (o null si la cola está
+  /// vacía / todas en cola sin procesar todavía).
+  Song? _active;
+
+  /// True mientras el processor loop está corriendo. Evita arrancar dos
+  /// loops concurrentes.
+  bool _processing = false;
+
+  /// Cancelaciones pedidas mientras la descarga aún estaba en cola o en
+  /// vuelo — el processor las respeta al llegar a esa canción.
+  final Set<String> _cancelRequested = {};
+
+  /// Snapshot de la cola para la UI: canción actualmente descargando
+  /// (primero) seguida de las pendientes en orden.
+  Song? get activeDownload => _active;
+  List<Song> get queuedDownloads => List.unmodifiable(_queue);
+
+  /// True si [songId] está en la cola (pendiente o descargando).
+  bool isQueued(String songId) =>
+      _active?.id == songId || _queue.any((s) => s.id == songId);
+
+  /// Total de descargas en cola incluyendo la activa. Para el badge.
+  int get pendingCount => (_active != null ? 1 : 0) + _queue.length;
+
   /// Ruta de la carpeta donde viven las descargas. Útil para la UI de
   /// ajustes que muestra "tu música está en …".
   String get downloadsPath => _downloadsDir.path;
@@ -195,13 +224,56 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Descarga una canción de streaming. Si ya está descargada o en curso,
-  /// no hace nada (idempotente).
+  /// Encola una canción para descarga. Idempotente: si ya está descargada,
+  /// en curso o en cola, no hace nada. Las descargas se procesan de a una
+  /// (FIFO) por el processor loop.
   Future<void> download(Song song) async {
     if (!song.isStreaming || song.streamingId == null) return;
     if (isDownloaded(song.id)) return;
-    if (isDownloading(song.id)) return;
+    if (isQueued(song.id)) return;
 
+    _queue.add(song);
+    _cancelRequested.remove(song.id);
+    notifyListeners();
+    // Arranca el processor si no está ya corriendo.
+    // ignore: discarded_futures
+    _processQueue();
+  }
+
+  /// Loop que drena la cola de a una descarga. Se auto-detiene cuando la
+  /// cola queda vacía; `download()` lo re-arranca al encolar algo nuevo.
+  Future<void> _processQueue() async {
+    if (_processing) return;
+    _processing = true;
+    try {
+      while (_queue.isNotEmpty) {
+        final song = _queue.removeAt(0);
+        // ¿Cancelada mientras esperaba en cola?
+        if (_cancelRequested.remove(song.id)) {
+          notifyListeners();
+          continue;
+        }
+        _active = song;
+        notifyListeners();
+        try {
+          await _performDownload(song);
+        } catch (e) {
+          devLog('DownloadService: descarga de ${song.title} falló: $e');
+          // No rethrow — un fallo no debe matar el loop; seguimos con
+          // la siguiente de la cola.
+        } finally {
+          _active = null;
+          notifyListeners();
+        }
+      }
+    } finally {
+      _processing = false;
+    }
+  }
+
+  /// Ejecuta la descarga real de [song] (resuelve URL, stream a disco,
+  /// opcional transcode MP3 + metadata). Lanza en error.
+  Future<void> _performDownload(Song song) async {
     _inProgress[song.id] = 0.0;
     notifyListeners();
 
@@ -338,8 +410,15 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Cancela una descarga en curso (libera el .part).
+  /// Cancela una descarga: si está en cola la quita, si está en curso
+  /// aborta el stream y libera el .part.
   Future<void> cancel(String songId) async {
+    // Marca para que el processor la salte si aún no arrancó, y quítala
+    // de la cola de pendientes.
+    _cancelRequested.add(songId);
+    _queue.removeWhere((s) => s.id == songId);
+
+    // Si está descargando ahora, aborta el stream activo.
     final sub = _activeSubs.remove(songId);
     await sub?.cancel();
     _inProgress.remove(songId);
@@ -348,6 +427,18 @@ class DownloadService extends ChangeNotifier {
       if (await part.exists()) await part.delete();
     } catch (_) {}
     notifyListeners();
+  }
+
+  /// Cancela TODA la cola (pendientes + activa). Útil para el botón
+  /// "cancelar todo" de la pantalla de descargas.
+  Future<void> cancelAll() async {
+    final ids = <String>{
+      if (_active != null) _active!.id,
+      ..._queue.map((s) => s.id),
+    };
+    for (final id in ids) {
+      await cancel(id);
+    }
   }
 
   /// Elimina un archivo descargado del disco.

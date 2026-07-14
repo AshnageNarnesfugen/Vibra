@@ -26,6 +26,7 @@ import 'login_screen.dart';
 import 'player_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
+import 'downloads_screen.dart';
 import 'local_album_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'search_screen.dart';
@@ -298,6 +299,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
       // adaptado al modo.
       onRefresh: () => _onPullToRefresh(isStreaming),
       actions: [
+        // Icono de descargas con badge de cantidad en cola. El badge solo
+        // aparece cuando hay descargas activas/pendientes.
+        Consumer<DownloadService?>(
+          builder: (context, dl, _) {
+            final pending = dl?.pendingCount ?? 0;
+            final icon = IconButton(
+              tooltip: 'Descargas',
+              icon: Icon(pending > 0
+                  ? Icons.downloading_rounded
+                  : Icons.download_rounded),
+              onPressed: () {
+                final s = UiSettingsScope.of(context);
+                Navigator.of(context).pushAnimated(
+                  const DownloadsScreen(),
+                  style: s.transitionStyle,
+                  durationMs: s.transitionDurationMs,
+                );
+              },
+            );
+            if (pending == 0) return icon;
+            return Badge(
+              label: Text('$pending'),
+              offset: const Offset(-6, 6),
+              child: icon,
+            );
+          },
+        ),
         IconButton(
           tooltip: 'Buscar',
           icon: const Icon(Icons.search_rounded),
