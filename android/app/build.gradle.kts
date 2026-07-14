@@ -1,9 +1,33 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// ─── Firma de release ───
+// La identidad de firma DEBE ser estable entre builds: Android rechaza
+// actualizar una app cuya firma cambió ("conflicto de paquetes" → obliga
+// a desinstalar). Antes firmábamos release con la llave debug, que en
+// GitHub Actions se regenera en CADA runner → cada release tenía firma
+// distinta y ningún update instalaba encima del anterior.
+//
+// Fuentes de la config, en orden:
+//   1. `android/key.properties` (gitignored) — builds locales.
+//   2. Variables de entorno VIBRA_KEYSTORE_* — CI (el workflow decodifica
+//      el keystore desde el secret KEYSTORE_BASE64).
+//   3. Sin ninguna de las dos → fallback a la llave debug (contribuidores
+//      sin keystore siguen pudiendo compilar).
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun signingValue(propKey: String, envKey: String): String? =
+    keystoreProperties.getProperty(propKey)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envKey)?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.dreadashes.vibra"
@@ -31,11 +55,28 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val storePath = signingValue("storeFile", "VIBRA_KEYSTORE_PATH")
+            if (storePath != null) {
+                storeFile = file(storePath)
+                storePassword = signingValue("storePassword", "VIBRA_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "VIBRA_KEY_ALIAS") ?: "vibra"
+                keyPassword = signingValue("keyPassword", "VIBRA_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null) {
+                releaseSigning
+            } else {
+                // Sin keystore configurado: llave debug para que
+                // `flutter run --release` siga funcionando out-of-the-box.
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

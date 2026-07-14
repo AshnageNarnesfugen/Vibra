@@ -53,9 +53,22 @@ jobs:
       - name: Analyze (no bloquea el release, solo reporta)
         run: flutter analyze || true
 
+      # Keystore de release estable (secret KEYSTORE_BASE64). Sin esto,
+      # cada runner firmaba con una llave debug recién generada → cada
+      # release tenía firma distinta → Android rechazaba actualizar
+      # ("conflicto de paquetes") y obligaba a desinstalar. Con la misma
+      # llave en todos los builds, los updates instalan encima.
+      - name: Decode release keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/vibra-release.jks"
+
       # Build del APK release. El nombre de salida ya lo renombra el
       # build.gradle.kts a Vibra-<versionName>.apk.
       - name: Build release APK
+        env:
+          VIBRA_KEYSTORE_PATH: ${{ runner.temp }}/vibra-release.jks
+          VIBRA_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          VIBRA_KEY_ALIAS: vibra
+          VIBRA_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: flutter build apk --release
 
       # Localiza el APK con nombre de marca. Fallback al app-release.apk
