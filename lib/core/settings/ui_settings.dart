@@ -225,6 +225,7 @@ class UiSettings {
     this.useDynamicColorFromAlbumArt = true,
     this.fallbackAccentColor = const Color(0xFF7C5CFF),
     this.fallbackOnAccentColor = const Color(0xFFFFFFFF),
+    this.fallbackSecondaryColor,
     this.spacingScale = 1.0,
     this.cornerRadius = 16.0,
     this.songTileMinWidth = 360.0,
@@ -401,6 +402,13 @@ class UiSettings {
   final Color fallbackAccentColor;
   final Color fallbackOnAccentColor;
 
+  /// Segundo color del fondo "de color" cuando NO hay canción activa.
+  /// `null` = automático: se deriva oscureciendo [fallbackAccentColor]
+  /// (comportamiento histórico — el "moradito" que se veía por defecto
+  /// era esta derivación del acento morado default). Si el usuario lo
+  /// setea, el gradiente sin canción usa acento + este color.
+  final Color? fallbackSecondaryColor;
+
   /// Multiplicador global de espaciado (0.6..1.6).
   final double spacingScale;
 
@@ -521,6 +529,8 @@ class UiSettings {
     bool? useDynamicColorFromAlbumArt,
     Color? fallbackAccentColor,
     Color? fallbackOnAccentColor,
+    Color? fallbackSecondaryColor,
+    bool clearFallbackSecondaryColor = false,
     double? spacingScale,
     double? cornerRadius,
     double? songTileMinWidth,
@@ -594,6 +604,9 @@ class UiSettings {
       fallbackAccentColor: fallbackAccentColor ?? this.fallbackAccentColor,
       fallbackOnAccentColor:
           fallbackOnAccentColor ?? this.fallbackOnAccentColor,
+      fallbackSecondaryColor: clearFallbackSecondaryColor
+          ? null
+          : (fallbackSecondaryColor ?? this.fallbackSecondaryColor),
       spacingScale: spacingScale ?? this.spacingScale,
       cornerRadius: cornerRadius ?? this.cornerRadius,
       songTileMinWidth: songTileMinWidth ?? this.songTileMinWidth,
@@ -668,6 +681,7 @@ class UiSettings {
         'useDynamicColorFromAlbumArt': useDynamicColorFromAlbumArt,
         'fallbackAccentColor': fallbackAccentColor.toARGB32(),
         'fallbackOnAccentColor': fallbackOnAccentColor.toARGB32(),
+        'fallbackSecondaryColor': fallbackSecondaryColor?.toARGB32(),
         'spacingScale': spacingScale,
         'cornerRadius': cornerRadius,
         'songTileMinWidth': songTileMinWidth,
@@ -764,6 +778,9 @@ class UiSettings {
           Color((m['fallbackAccentColor'] as num?)?.toInt() ?? 0xFF7C5CFF),
       fallbackOnAccentColor:
           Color((m['fallbackOnAccentColor'] as num?)?.toInt() ?? 0xFFFFFFFF),
+      fallbackSecondaryColor: (m['fallbackSecondaryColor'] as num?) == null
+          ? null
+          : Color((m['fallbackSecondaryColor'] as num).toInt()),
       spacingScale: (m['spacingScale'] as num?)?.toDouble() ?? 1.0,
       cornerRadius: (m['cornerRadius'] as num?)?.toDouble() ?? 18.0,
       songTileMinWidth:

@@ -126,4 +126,31 @@ extension MediaQualityBitrate on MediaQuality {
         return 'Alta';
     }
   }
+
+  /// Resolución máxima (height en px) del stream de VIDEO por nivel. El
+  /// picker busca el format con height ≤ tope más cercano al tope; si
+  /// nada queda ≤ tope, cae al más bajo disponible.
+  int get maxVideoHeightPx {
+    switch (this) {
+      case MediaQuality.low:
+        return 360;
+      case MediaQuality.medium:
+        return 720;
+      case MediaQuality.high:
+        return 1 << 30; // sin tope — toma la resolución más alta que haya
+    }
+  }
+
+  /// Label para los selectores de VIDEO — en video lo que se elige es
+  /// resolución de imagen, no bitrate de audio.
+  String get videoLabel {
+    switch (this) {
+      case MediaQuality.low:
+        return 'Baja (360p)';
+      case MediaQuality.medium:
+        return 'Media (720p)';
+      case MediaQuality.high:
+        return 'Alta (máxima disponible)';
+    }
+  }
 }

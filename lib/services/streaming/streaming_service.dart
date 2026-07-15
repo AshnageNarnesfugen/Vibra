@@ -1595,7 +1595,10 @@ class StreamingService {
   ///   - MUSIC_VIDEO_TYPE_ATV (no hay video real).
   ///   - MUSIC_VIDEO_TYPE_PODCAST_EPISODE.
   ///   - Cualquier valor desconocido por seguridad.
-  Future<VideoStreamInfo?> resolveVideoUrl(String videoId) async {
+  Future<VideoStreamInfo?> resolveVideoUrl(
+    String videoId, {
+    int maxHeightPx = 720,
+  }) async {
     const allowedVideoTypes = {
       'MUSIC_VIDEO_TYPE_OMV',
       'MUSIC_VIDEO_TYPE_UGC',
@@ -1621,7 +1624,7 @@ class StreamingService {
           if (formats is List) ...formats,
         ];
         if (all.isEmpty) continue;
-        final best = _pickBestVideo(all);
+        final best = _pickBestVideo(all, maxHeight: maxHeightPx);
         if (best != null) {
           return best;
         }
@@ -1632,24 +1635,30 @@ class StreamingService {
     return null;
   }
 
-  /// Filtra el mejor format de video. Prefiere formats COMBINADOS (video+audio
-  /// en una sola pista) — son los que permiten al video_player reproducir
-  /// audio sin necesidad de un decoder separado. Los `formats` no-adaptivos
-  /// (itag 18 = 360p mp4 c/audio, itag 22 = 720p mp4 c/audio) son combinados.
-  /// Los `adaptiveFormats` de video son típicamente video-only.
+  /// Filtra el mejor format de video respetando [maxHeight] (el tope de
+  /// resolución que viene del ajuste "Calidad de video" según la red).
   ///
-  /// Sin esto, al activar el toggle "ver video" el VideoPlayer cargaba un
-  /// stream video-only → silencio total (porque también muteamos el audio
-  /// principal asumiendo que el video traía audio).
+  /// Estrategia: la resolución MÁS alta que no supere el tope; a igual
+  /// resolución prefiere el format COMBINADO (video+audio en una pista —
+  /// itag 18 = 360p, itag 22 = 720p) porque le da al video_player audio
+  /// sin decoder separado. Si nada queda ≤ tope, cae al más bajo
+  /// disponible — mejor algo que nada.
   ///
-  /// Resolución target: 360p–720p (ahorra ancho de banda sin perder calidad
-  /// visible). Si no hay combinado, cae a video-only con `hasAudio: false`
-  /// — el caller debe mantener el audio principal en ese caso.
-  static VideoStreamInfo? _pickBestVideo(List<dynamic> formats) {
-    Map<String, dynamic>? bestCombined;
-    var bestCombinedScore = -1;
-    Map<String, dynamic>? bestVideoOnly;
-    var bestVideoOnlyScore = -1;
+  /// Los `adaptiveFormats` de resolución alta (1080p+) son video-only:
+  /// devolvemos `hasAudio: false` y el caller mantiene el audio principal
+  /// sonando (el video va muteado y sincronizado por el sync timer). Ese
+  /// path ya existía como fallback — ahora es también el que habilita
+  /// "Alta" con resoluciones arriba de 720p.
+  static VideoStreamInfo? _pickBestVideo(
+    List<dynamic> formats, {
+    int maxHeight = 720,
+  }) {
+    Map<String, dynamic>? bestUnder; // mejor format ≤ tope
+    var bestUnderH = -1;
+    var bestUnderHasAudio = false;
+    Map<String, dynamic>? bestOver; // mínimo absoluto arriba del tope
+    var bestOverH = 1 << 30;
+    var bestOverHasAudio = false;
     for (final f in formats) {
       if (f is! Map) continue;
       final mime = _at(f, ['mimeType']);
@@ -1663,25 +1672,29 @@ class StreamingService {
       // como `audioChannels` o `audioSampleRate` presentes.
       final hasAudio = _at(f, ['audioChannels']) != null ||
           _at(f, ['audioSampleRate']) != null;
-      final inIdealRange = h >= 360 && h <= 720;
-      final score = inIdealRange ? 1000 + h : h;
-      if (hasAudio) {
-        if (score > bestCombinedScore) {
-          bestCombined = f.cast<String, dynamic>();
-          bestCombinedScore = score;
+      if (h <= maxHeight) {
+        final better = h > bestUnderH ||
+            (h == bestUnderH && hasAudio && !bestUnderHasAudio);
+        if (better) {
+          bestUnder = f.cast<String, dynamic>();
+          bestUnderH = h;
+          bestUnderHasAudio = hasAudio;
         }
       } else {
-        if (score > bestVideoOnlyScore) {
-          bestVideoOnly = f.cast<String, dynamic>();
-          bestVideoOnlyScore = score;
+        final better = h < bestOverH ||
+            (h == bestOverH && hasAudio && !bestOverHasAudio);
+        if (better) {
+          bestOver = f.cast<String, dynamic>();
+          bestOverH = h;
+          bestOverHasAudio = hasAudio;
         }
       }
     }
-    final pick = bestCombined ?? bestVideoOnly;
+    final pick = bestUnder ?? bestOver;
     if (pick == null) return null;
     return VideoStreamInfo(
       url: pick['url'] as String,
-      hasAudio: bestCombined != null,
+      hasAudio: bestUnder != null ? bestUnderHasAudio : bestOverHasAudio,
     );
   }
 

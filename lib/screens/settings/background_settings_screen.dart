@@ -492,6 +492,77 @@ class _AnimatedGradientSection extends StatelessWidget {
           ),
         ),
         SizedBox(height: tokens.gap),
+        // ─── Colores por defecto (sin canción activa) ───
+        // Sin canción, el shader usa el acento del usuario + un secundario.
+        // Históricamente el secundario era SIEMPRE una derivación oscura del
+        // acento (el "moradito" con el acento default) — ahora es
+        // configurable, con "Automático" para volver a la derivación.
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Colores sin canción',
+                  style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: tokens.gapSm),
+              Text(
+                'Los colores del fondo cuando no hay nada reproduciéndose. '
+                'El primario es el mismo acento de la app (ajustes de Tema).',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              SizedBox(height: tokens.gap),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Primario',
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ),
+                  _ColorSwatch(
+                    color: s.fallbackAccentColor,
+                    selected: false,
+                    onTap: () => showColorPickerSheet(
+                      context,
+                      initialColor: s.fallbackAccentColor,
+                      allowAlpha: false,
+                      title: 'Color primario',
+                      onChanged: (c) => controller
+                          .update((p) => p.copyWith(fallbackAccentColor: c)),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: tokens.gapSm),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('Secundario',
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ),
+                  if (s.fallbackSecondaryColor != null)
+                    TextButton(
+                      onPressed: () => controller.update((p) =>
+                          p.copyWith(clearFallbackSecondaryColor: true)),
+                      child: const Text('Automático'),
+                    ),
+                  _ColorSwatch(
+                    // Con secundario sin setear mostramos el derivado
+                    // actual — lo que realmente se ve en el fondo.
+                    color: s.fallbackSecondaryColor ?? preview[1],
+                    selected: false,
+                    onTap: () => showColorPickerSheet(
+                      context,
+                      initialColor: s.fallbackSecondaryColor ?? preview[1],
+                      allowAlpha: false,
+                      title: 'Color secundario',
+                      onChanged: (c) => controller.update(
+                          (p) => p.copyWith(fallbackSecondaryColor: c)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: tokens.gap),
         GlassCard(
           child: LabeledSlider(
             label: 'Velocidad de la animación',
@@ -514,6 +585,19 @@ class _AnimatedGradientSection extends StatelessWidget {
   /// usamos el acento del usuario como aproximación — el shader siempre se
   /// ve coherente con el resto de la app.
   List<Color> _previewColors(UiSettings s) {
+    // Mismo cálculo que computeGradientColors sin paleta: respeta el
+    // secundario elegido por el usuario (o deriva del acento si es null).
+    final secondary = s.fallbackSecondaryColor;
+    if (secondary != null) {
+      final hslSec = HSLColor.fromColor(secondary);
+      return [
+        s.fallbackAccentColor,
+        secondary,
+        hslSec
+            .withLightness((hslSec.lightness * 0.45).clamp(0.0, 1.0))
+            .toColor(),
+      ];
+    }
     final hsl = HSLColor.fromColor(s.fallbackAccentColor);
     return [
       s.fallbackAccentColor,

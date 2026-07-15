@@ -373,7 +373,8 @@ Future<void> main() async {
         Provider<StreamingService>.value(value: streaming),
         ChangeNotifierProvider<PlaylistService>.value(value: playlists),
         ChangeNotifierProvider<VideoAvailabilityController>(
-          create: (_) => VideoAvailabilityController(streaming),
+          create: (_) =>
+              VideoAvailabilityController(streaming, network: network),
         ),
         // MusicVideoPlayer mantiene UN solo VideoPlayerController compartido
         // entre cover y bg, y sincroniza play/pause/seek con el audio. Antes

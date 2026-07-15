@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'network_quality_resolver.dart';
 import 'streaming/streaming_service.dart';
 import '../core/dev_log.dart';
 
@@ -15,9 +16,15 @@ import '../core/dev_log.dart';
 /// Centralizar evita pedir 2 veces la misma URL (player endpoint es caro,
 /// suele tardar 1-2s y tiene cuota).
 class VideoAvailabilityController extends ChangeNotifier {
-  VideoAvailabilityController(this._streaming);
+  VideoAvailabilityController(this._streaming, {NetworkQualityResolver? network})
+      : _network = network;
 
   final StreamingService _streaming;
+
+  /// Resuelve el ajuste "Calidad de video" (WiFi vs datos) al momento de
+  /// pedir el stream. Nullable para tests / plataformas sin connectivity:
+  /// sin resolver se usa el tope histórico de 720p.
+  final NetworkQualityResolver? _network;
 
   /// videoId → info del stream (null = checked y no tiene video).
   /// Antes guardábamos solo la URL — necesitamos también `hasAudio` para que
@@ -60,7 +67,10 @@ class VideoAvailabilityController extends ChangeNotifier {
     if (_inFlight.contains(videoId)) return;
     _inFlight.add(videoId);
     try {
-      final info = await _streaming.resolveVideoUrl(videoId);
+      final info = await _streaming.resolveVideoUrl(
+        videoId,
+        maxHeightPx: _network?.videoQuality.maxVideoHeightPx ?? 720,
+      );
       _cache[videoId] = info;
       notifyListeners();
     } catch (e) {

@@ -22,6 +22,7 @@ import '../widgets/music_video_cover.dart';
 import '../widgets/palette_picker_sheet.dart';
 import '../widgets/playback_params_sheet.dart';
 import '../widgets/responsive_song_grid.dart';
+import '../widgets/song_context_sheet.dart';
 import '../widgets/song_thumbnail.dart';
 
 import '../core/animations/page_transitions.dart';
@@ -262,6 +263,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             );
           }),
+          // Menú de contexto de la canción actual — las mismas acciones
+          // que el hold / 3-puntitos de las listas (guardar en playlist,
+          // descargar, ir al álbum/artista, reproducir a continuación…).
+          AdaptiveColor(
+            builder: (context, color) => IconButton(
+              tooltip: 'Más opciones',
+              onPressed: () =>
+                  showSongContextSheet(context, songs: [song]),
+              icon: Icon(Icons.more_vert_rounded, color: color),
+            ),
+          ),
         ],
       ),
       body: isWide
@@ -397,11 +409,16 @@ class _PortraitPlayer extends StatelessWidget {
 
     final cover = RepaintBoundary(child: _CoverWithVideoToggle(song: song));
 
-    final title = MarqueeText(
-      song.title,
-      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+    // Hold sobre el título → menú de contexto de la canción (mismo gesto
+    // que en las listas). El botón ⋮ del AppBar hace lo mismo.
+    final title = GestureDetector(
+      onLongPress: () => showSongContextSheet(context, songs: [song]),
+      child: MarqueeText(
+        song.title,
+        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
     );
 
     final artistStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -1231,11 +1248,14 @@ class _PlayerPanel extends StatelessWidget {
       ),
     );
 
-    final title = MarqueeText(
-      song.title,
-      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+    final title = GestureDetector(
+      onLongPress: () => showSongContextSheet(context, songs: [song]),
+      child: MarqueeText(
+        song.title,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
     );
 
     final artistStyle = Theme.of(context).textTheme.bodyLarge?.copyWith(

@@ -48,7 +48,11 @@ class QualitySettingsScreen extends StatelessWidget {
           SizedBox(height: tokens.gap),
           _Section(
             title: 'Video en WiFi',
+            subtitle:
+                'Resolución de imagen del music video. El cambio aplica '
+                'al siguiente video que cargue.',
             value: s.videoQualityWifi,
+            labelOf: (q) => q.videoLabel,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(videoQualityWifi: v)),
           ),
@@ -56,9 +60,10 @@ class QualitySettingsScreen extends StatelessWidget {
           _Section(
             title: 'Video en datos móviles',
             subtitle:
-                'Default baja — 5 minutos de música video en 720p+ '
+                'Default baja — 5 minutos de music video en 720p+ '
                 'consumen ~100MB.',
             value: s.videoQualityCellular,
+            labelOf: (q) => q.videoLabel,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(videoQualityCellular: v)),
           ),
@@ -103,12 +108,17 @@ class _Section extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.subtitle,
+    this.labelOf,
   });
 
   final String title;
   final String? subtitle;
   final MediaQuality value;
   final ValueChanged<MediaQuality> onChanged;
+
+  /// Label por opción — default el de audio (kbps). Los selectores de
+  /// video pasan `videoLabel` (resolución en p).
+  final String Function(MediaQuality)? labelOf;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +147,7 @@ class _Section extends StatelessWidget {
                   RadioListTile<MediaQuality>(
                     contentPadding: EdgeInsets.zero,
                     value: q,
-                    title: Text(q.label),
+                    title: Text(labelOf?.call(q) ?? q.label),
                   ),
               ],
             ),

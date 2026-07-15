@@ -322,6 +322,20 @@ class _BaseLayer extends StatelessWidget {
   /// para pre-renderizar un gradiente que el sampler de las cards muestre.
   static List<Color> computeGradientColors(UiSettings s, AlbumPalette? p) {
     if (p == null) {
+      // Sin canción: acento del usuario + su secundario elegido. Si no
+      // configuró secundario (null = automático), derivamos del acento
+      // oscureciéndolo — el comportamiento histórico.
+      final secondary = s.fallbackSecondaryColor;
+      if (secondary != null) {
+        final hslSec = HSLColor.fromColor(secondary);
+        return [
+          s.fallbackAccentColor,
+          secondary,
+          hslSec
+              .withLightness((hslSec.lightness * 0.45).clamp(0.0, 1.0))
+              .toColor(),
+        ];
+      }
       final hsl = HSLColor.fromColor(s.fallbackAccentColor);
       return [
         s.fallbackAccentColor,
