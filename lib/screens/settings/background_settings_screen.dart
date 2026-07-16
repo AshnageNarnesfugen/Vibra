@@ -326,6 +326,20 @@ class _BackgroundImageSection extends StatelessWidget {
     // Extraer el acento de la imagen nueva (async, fire-and-forget): con
     // fondo de imagen custom, ese color override al acento por defecto.
     unawaited(ensureBackgroundImageAccent(controller, force: true));
+    // Directo al editor fullscreen para encuadrarla — flujo de un paso.
+    if (!context.mounted) return;
+    _openEditor(context);
+  }
+
+  void _openEditor(BuildContext context) {
+    // Root navigator: el editor es fullscreen sobre negro (estilo recorte
+    // de foto de perfil) y debe tapar bottom bar + mini player.
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => BackgroundImageEditorScreen(controller: controller),
+      ),
+    );
   }
 
   @override
@@ -360,31 +374,39 @@ class _BackgroundImageSection extends StatelessWidget {
               ),
             )
           else ...[
-            Text(
-              'Coloca la imagen como quieres que se vea en tu pantalla. '
-              'Pellizca con dos dedos para hacer zoom · arrastra para '
-              'reposicionar · doble tap para resetear.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            SizedBox(height: tokens.gap),
-            // Damos al editor un alto generoso — el frame interno se
-            // auto-ajusta al aspecto real del teléfono.
-            SizedBox(
-              height: 460,
-              child: BackgroundImageEditor(controller: controller),
+            // Preview NO interactivo del encuadre actual (mismo renderer
+            // que el fondo real). El ajuste se hace en el editor
+            // fullscreen — tap en la preview o en "Ajustar posición".
+            Center(
+              child: GestureDetector(
+                onTap: () => _openEditor(context),
+                child: SizedBox(
+                  height: 280,
+                  child: AspectRatio(
+                    aspectRatio: MediaQuery.sizeOf(context).shortestSide /
+                        MediaQuery.sizeOf(context).longestSide,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: ColoredBox(
+                        color: Colors.black,
+                        child: BackgroundImageView(
+                          path: s.backgroundImagePath!,
+                          transform: s.backgroundImageTransform,
+                          opacity: 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
             SizedBox(height: tokens.gap),
             Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => controller.update(
-                    (p) => p.copyWith(
-                      backgroundImageTransform:
-                          const BackgroundImageTransform(),
-                    ),
-                  ),
-                  icon: const Icon(Icons.center_focus_strong_rounded),
-                  label: const Text('Centrar'),
+                  onPressed: () => _openEditor(context),
+                  icon: const Icon(Icons.open_with_rounded),
+                  label: const Text('Ajustar posición'),
                 ),
                 const Spacer(),
                 TextButton.icon(

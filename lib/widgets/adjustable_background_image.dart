@@ -7,8 +7,16 @@ import '../core/settings/ui_settings.dart';
 
 /// Vista NO-interactiva que pinta la imagen de fondo respetando la
 /// transformación guardada en [UiSettings]. La usa el background real de la
-/// app (full-bleed) y la previsualización del editor (dentro del marco de
-/// teléfono).
+/// app (full-bleed), la preview de ajustes y el editor fullscreen.
+///
+/// Semántica del transform (cambiada en 1.3.2):
+///   - Base `BoxFit.contain` a scale 1.0 → la imagen ENTERA visible,
+///     centrada. Nada de auto-crop: el usuario compone el encuadre él
+///     mismo con pinch-zoom en el editor.
+///   - `scale` va de 0.35 (más chica que la pantalla) a 8.0 (zoom fuerte),
+///     así que cubrir la pantalla completa (el viejo "cover") es solo un
+///     encuadre más de los posibles.
+///   - `offsetX/Y` normalizados: 1.0 = media pantalla de desplazamiento.
 class BackgroundImageView extends StatelessWidget {
   const BackgroundImageView({
     super.key,
@@ -21,6 +29,11 @@ class BackgroundImageView extends StatelessWidget {
   final BackgroundImageTransform transform;
   final double opacity;
 
+  /// Rango de zoom permitido. Compartido con el editor para que lo que se
+  /// edita sea exactamente lo que se renderiza.
+  static const double minScale = 0.35;
+  static const double maxScale = 8.0;
+
   @override
   Widget build(BuildContext context) {
     return Opacity(
@@ -29,8 +42,8 @@ class BackgroundImageView extends StatelessWidget {
         builder: (context, constraints) {
           final w = constraints.maxWidth;
           final h = constraints.maxHeight;
-          // offsetX/Y están normalizados (-1..1). Los multiplicamos por la
-          // mitad del lienzo para obtener desplazamiento en píxeles real.
+          // offsetX/Y están normalizados (-1..1 ≈ media pantalla). Los
+          // multiplicamos por la mitad del lienzo para obtener px reales.
           final dx = transform.offsetX * w / 2;
           final dy = transform.offsetY * h / 2;
           return ClipRect(
@@ -40,12 +53,12 @@ class BackgroundImageView extends StatelessWidget {
               child: Transform.translate(
                 offset: Offset(dx, dy),
                 child: Transform.scale(
-                  scale: transform.scale.clamp(1.0, 6.0),
+                  scale: transform.scale.clamp(minScale, maxScale),
                   child: Image.file(
                     File(path),
                     width: w,
                     height: h,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     errorBuilder: (_, _, _) =>
                         const ColoredBox(color: Colors.black12),
                   ),
@@ -59,196 +72,189 @@ class BackgroundImageView extends StatelessWidget {
   }
 }
 
-/// Editor estilo "publicación de red social":
-///   - Una silueta de teléfono con la proporción real de tu pantalla.
-///   - La imagen vive DENTRO del frame.
-///   - Pinch-zoom con dos dedos para escalar (como Instagram al recortar).
-///   - Drag con un dedo para reposicionar.
-///   - Doble tap para resetear.
+/// Editor de posición del fondo a PANTALLA COMPLETA, estilo "recortar foto
+/// de perfil": fondo negro, la imagen entera al abrir, y el usuario compone
+/// el encuadre con gestos — la pantalla completa ES el marco, así que lo
+/// que se ve al darle "Listo" es exactamente cómo queda el fondo.
 ///
-/// La transformación se persiste en tiempo real en [SettingsController], así
-/// el background real (fuera del editor) refleja los cambios al instante.
-class BackgroundImageEditor extends StatefulWidget {
-  const BackgroundImageEditor({
-    super.key,
-    required this.controller,
-  });
+///   - Pinch con dos dedos → zoom anclado al punto del pellizco.
+///   - Drag (1 o 2 dedos) → reposicionar.
+///   - Doble tap → resetear (imagen entera centrada).
+///
+/// Los cambios viven en estado local: "Listo" persiste, "Cancelar"/back
+/// descarta (el editor viejo persistía cada frame del gesto — imposible
+/// arrepentirse).
+class BackgroundImageEditorScreen extends StatefulWidget {
+  const BackgroundImageEditorScreen({super.key, required this.controller});
 
   final SettingsController controller;
 
   @override
-  State<BackgroundImageEditor> createState() => _BackgroundImageEditorState();
+  State<BackgroundImageEditorScreen> createState() =>
+      _BackgroundImageEditorScreenState();
 }
 
-class _BackgroundImageEditorState extends State<BackgroundImageEditor> {
-  late BackgroundImageTransform _start;
+class _BackgroundImageEditorScreenState
+    extends State<BackgroundImageEditorScreen> {
+  late BackgroundImageTransform _transform;
+  BackgroundImageTransform _gestureStart = const BackgroundImageTransform();
   Offset _focalStart = Offset.zero;
-  double _scaleStart = 1.0;
 
   @override
-  Widget build(BuildContext context) {
-    final settings = widget.controller.value;
-    final path = settings.backgroundImagePath;
-    if (path == null) {
-      return const Center(
-        child: Text('Selecciona una imagen de fondo primero.'),
-      );
-    }
-
-    // Aspecto REAL del dispositivo (en orientación portrait), así lo que
-    // ves en el editor es exactamente cómo se va a ver en pantalla. En
-    // landscape invertimos para que el frame quede vertical igualmente.
-    final mq = MediaQuery.sizeOf(context);
-    final shortest = mq.shortestSide;
-    final longest = mq.longestSide;
-    final phoneAspect = shortest / longest; // p.ej. 9/19.5 ≈ 0.46
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Calculamos cuán grande puede ser el frame respetando ambos
-        // constraints (ancho y alto) y la relación de aspecto real.
-        final maxH = constraints.maxHeight;
-        final maxW = constraints.maxWidth;
-        double frameH = maxH;
-        double frameW = frameH * phoneAspect;
-        if (frameW > maxW) {
-          frameW = maxW;
-          frameH = frameW / phoneAspect;
-        }
-
-        return Center(
-          child: SizedBox(
-            width: frameW,
-            height: frameH,
-            child: _PhoneSilhouette(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onScaleStart: (details) {
-                  _start = settings.backgroundImageTransform;
-                  _focalStart = details.focalPoint;
-                  _scaleStart = _start.scale;
-                },
-                onScaleUpdate: (details) {
-                  final delta = details.focalPoint - _focalStart;
-                  final newScale = (_scaleStart * details.scale)
-                      .clamp(1.0, 6.0)
-                      .toDouble();
-                  // Normalizamos delta al rango del frame (-1..1) sobre la
-                  // mitad del frame visible — así el drag se siente 1:1
-                  // dentro del editor, no respecto a la pantalla completa.
-                  final newOffsetX =
-                      (_start.offsetX + (delta.dx * 2 / frameW))
-                          .clamp(-1.5, 1.5);
-                  final newOffsetY =
-                      (_start.offsetY + (delta.dy * 2 / frameH))
-                          .clamp(-1.5, 1.5);
-                  widget.controller.update(
-                    (s) => s.copyWith(
-                      backgroundImageTransform: BackgroundImageTransform(
-                        scale: newScale,
-                        offsetX: newOffsetX,
-                        offsetY: newOffsetY,
-                      ),
-                    ),
-                  );
-                },
-                onDoubleTap: () {
-                  widget.controller.update(
-                    (s) => s.copyWith(
-                      backgroundImageTransform:
-                          const BackgroundImageTransform(),
-                    ),
-                  );
-                },
-                child: BackgroundImageView(
-                  path: path,
-                  transform: settings.backgroundImageTransform,
-                  // En el editor mostramos la imagen al 100% para que el
-                  // usuario vea la composición real; la opacidad real se
-                  // aplica fuera, en producción.
-                  opacity: 1.0,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
+  void initState() {
+    super.initState();
+    _transform = widget.controller.value.backgroundImageTransform;
   }
-}
 
-/// Marco visual de teléfono: rounded-rect con borde claro, dynamic-island
-/// opcional arriba y home-indicator abajo. Recorta su `child` al borde.
-class _PhoneSilhouette extends StatelessWidget {
-  const _PhoneSilhouette({required this.child});
+  void _onScaleStart(ScaleStartDetails details) {
+    _gestureStart = _transform;
+    _focalStart = details.localFocalPoint;
+  }
 
-  final Widget child;
+  void _onScaleUpdate(ScaleUpdateDetails details, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final center = Offset(w / 2, h / 2);
+
+    final s1 = _gestureStart.scale;
+    final s2 = (s1 * details.scale)
+        .clamp(BackgroundImageView.minScale, BackgroundImageView.maxScale)
+        .toDouble();
+
+    // Zoom anclado al focal: el punto de la imagen bajo los dedos se queda
+    // bajo los dedos. Con render = translate(offset) ∘ scale(s) alrededor
+    // del centro, un punto de pantalla x cumple x = offset + s·v (v = vector
+    // imagen desde el centro). Para mantener x fijo al pasar de s1 → s2:
+    //   offset₂ = f − (f − offset₁)·(s2/s1)      con f = focal − centro
+    // y el pan es sumar el desplazamiento del focal.
+    final offset1 = Offset(
+      _gestureStart.offsetX * w / 2,
+      _gestureStart.offsetY * h / 2,
+    );
+    final f = _focalStart - center;
+    final zoomed = f - (f - offset1) * (s2 / s1);
+    final panned = zoomed + (details.localFocalPoint - _focalStart);
+
+    setState(() {
+      _transform = BackgroundImageTransform(
+        scale: s2,
+        offsetX: (panned.dx / (w / 2)).clamp(-2.5, 2.5),
+        offsetY: (panned.dy / (h / 2)).clamp(-2.5, 2.5),
+      );
+    });
+  }
+
+  void _reset() {
+    setState(() => _transform = const BackgroundImageTransform());
+  }
+
+  void _save() {
+    widget.controller.update(
+      (s) => s.copyWith(backgroundImageTransform: _transform),
+    );
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Sombra suave alrededor del frame.
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(36),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 24,
-                spreadRadius: 2,
+    final path = widget.controller.value.backgroundImagePath;
+    final size = MediaQuery.sizeOf(context);
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: path == null
+          ? const Center(
+              child: Text(
+                'Selecciona una imagen de fondo primero.',
+                style: TextStyle(color: Colors.white70),
               ),
-            ],
-          ),
-        ),
-        // Borde del teléfono.
-        ClipRRect(
-          borderRadius: BorderRadius.circular(36),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(36),
-              border: Border.all(
-                color: scheme.onSurface.withValues(alpha: 0.25),
-                width: 2,
-              ),
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                // ─── La imagen, editable a pantalla completa ───
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onScaleStart: _onScaleStart,
+                  onScaleUpdate: (d) => _onScaleUpdate(d, size),
+                  onDoubleTap: _reset,
+                  child: BackgroundImageView(
+                    path: path,
+                    transform: _transform,
+                    // Composición al 100% — la opacidad real se aplica en
+                    // producción, aquí el usuario necesita ver la imagen.
+                    opacity: 1.0,
+                  ),
+                ),
+
+                // ─── Controles (no interceptan gestos fuera de sí) ───
+                SafeArea(
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              tooltip: 'Cancelar',
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close_rounded,
+                                  color: Colors.white),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.white10,
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              onPressed: _reset,
+                              icon: const Icon(
+                                  Icons.center_focus_strong_rounded,
+                                  size: 18),
+                              label: const Text('Centrar'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: Colors.white10,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: _save,
+                              icon: const Icon(Icons.check_rounded, size: 18),
+                              label: const Text('Listo'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // Hint de gestos abajo, sobre scrim para legibilidad.
+                      // IgnorePointer: el scrim NO debe robar el drag/pinch
+                      // cuando el gesto empieza en la franja inferior.
+                      IgnorePointer(
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(24, 28, 24, 14),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [Color(0x00000000), Color(0x99000000)],
+                            ),
+                          ),
+                          child: const Text(
+                            'Pellizca para hacer zoom · arrastra para mover · '
+                            'doble tap para ver la imagen entera',
+                            textAlign: TextAlign.center,
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            // Padding interno simulando los bezels — la imagen vive dentro.
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(30),
-                child: child,
-              ),
-            ),
-          ),
-        ),
-        // Dynamic-island indicator (arriba).
-        Positioned(
-          top: 12,
-          child: Container(
-            width: 80,
-            height: 22,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-        // Home indicator (abajo).
-        Positioned(
-          bottom: 8,
-          child: Container(
-            width: 90,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
