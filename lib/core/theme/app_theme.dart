@@ -115,8 +115,11 @@ class AppThemeBuilder {
         darkColor = palette.dominant;
       }
     } else {
-      brightColor = settings.fallbackAccentColor;
-      darkColor = settings.fallbackAccentColor;
+      // Sin paleta de canción: acento efectivo — si el fondo es una
+      // imagen custom manda el color extraído de esa imagen, sino el
+      // acento elegido por el usuario.
+      brightColor = settings.effectiveFallbackAccent;
+      darkColor = settings.effectiveFallbackAccent;
     }
 
     // Color de fondo efectivo + su luminancia. Necesario para resolver
@@ -210,7 +213,8 @@ class AppThemeBuilder {
       onPrimary: onAccent,
       secondary: ContrastUtils.mix(accent, onSurface, 0.25),
       onSecondary: onAccent,
-      tertiary: usePalette ? palette.dominant : settings.fallbackAccentColor,
+      tertiary:
+          usePalette ? palette.dominant : settings.effectiveFallbackAccent,
       onTertiary: onAccent,
       error: const Color(0xFFFF5670),
       onError: const Color(0xFFFFFFFF),
@@ -467,7 +471,7 @@ class AppThemeBuilder {
     AlbumPalette? palette,
   ) {
     if (settings.backgroundMode == BackgroundMode.animatedGradient) {
-      return palette?.dominant ?? settings.fallbackAccentColor;
+      return palette?.dominant ?? settings.effectiveFallbackAccent;
     }
     if (settings.backgroundMode == BackgroundMode.image) {
       return palette?.dominant ?? settings.solidBackgroundColor;

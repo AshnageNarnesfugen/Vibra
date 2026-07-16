@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/settings/ui_settings.dart';
 import '../../core/theme/layout_tokens.dart';
+import '../../services/background_accent_extractor.dart';
 import '../../widgets/adjustable_background_image.dart';
 import '../../widgets/color_picker_sheet.dart';
 import '../../widgets/glass_card.dart';
@@ -320,6 +323,9 @@ class _BackgroundImageSection extends StatelessWidget {
         backgroundImageTransform: const BackgroundImageTransform(),
       ),
     );
+    // Extraer el acento de la imagen nueva (async, fire-and-forget): con
+    // fondo de imagen custom, ese color override al acento por defecto.
+    unawaited(ensureBackgroundImageAccent(controller, force: true));
   }
 
   @override

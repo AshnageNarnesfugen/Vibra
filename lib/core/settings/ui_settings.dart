@@ -226,6 +226,7 @@ class UiSettings {
     this.fallbackAccentColor = const Color(0xFF7C5CFF),
     this.fallbackOnAccentColor = const Color(0xFFFFFFFF),
     this.fallbackSecondaryColor,
+    this.backgroundImageAccentColor,
     this.spacingScale = 1.0,
     this.cornerRadius = 16.0,
     this.songTileMinWidth = 360.0,
@@ -409,6 +410,25 @@ class UiSettings {
   /// setea, el gradiente sin canción usa acento + este color.
   final Color? fallbackSecondaryColor;
 
+  /// Color acento extraído de la imagen de fondo custom (se calcula al
+  /// elegir la imagen y se cachea aquí). Cuando el fondo es una imagen
+  /// custom, este color OVERRIDE al [fallbackAccentColor] — la UI se
+  /// tiñe acorde al wallpaper elegido, no al acento genérico. Se limpia
+  /// junto con `clearBackgroundImagePath`.
+  final Color? backgroundImageAccentColor;
+
+  /// Acento efectivo cuando NO hay paleta de canción activa: si el
+  /// usuario eligió imagen de fondo custom y ya extrajimos su color,
+  /// manda ese; en cualquier otro caso el acento elegido en ajustes.
+  Color get effectiveFallbackAccent {
+    if (backgroundMode == BackgroundMode.image &&
+        backgroundImagePath != null &&
+        backgroundImageAccentColor != null) {
+      return backgroundImageAccentColor!;
+    }
+    return fallbackAccentColor;
+  }
+
   /// Multiplicador global de espaciado (0.6..1.6).
   final double spacingScale;
 
@@ -531,6 +551,7 @@ class UiSettings {
     Color? fallbackOnAccentColor,
     Color? fallbackSecondaryColor,
     bool clearFallbackSecondaryColor = false,
+    Color? backgroundImageAccentColor,
     double? spacingScale,
     double? cornerRadius,
     double? songTileMinWidth,
@@ -607,6 +628,11 @@ class UiSettings {
       fallbackSecondaryColor: clearFallbackSecondaryColor
           ? null
           : (fallbackSecondaryColor ?? this.fallbackSecondaryColor),
+      // El acento extraído viaja atado a la imagen: quitar la imagen
+      // también lo limpia (sino un fondo nuevo heredaría el tinte viejo).
+      backgroundImageAccentColor: clearBackgroundImagePath
+          ? null
+          : (backgroundImageAccentColor ?? this.backgroundImageAccentColor),
       spacingScale: spacingScale ?? this.spacingScale,
       cornerRadius: cornerRadius ?? this.cornerRadius,
       songTileMinWidth: songTileMinWidth ?? this.songTileMinWidth,
@@ -682,6 +708,7 @@ class UiSettings {
         'fallbackAccentColor': fallbackAccentColor.toARGB32(),
         'fallbackOnAccentColor': fallbackOnAccentColor.toARGB32(),
         'fallbackSecondaryColor': fallbackSecondaryColor?.toARGB32(),
+        'backgroundImageAccentColor': backgroundImageAccentColor?.toARGB32(),
         'spacingScale': spacingScale,
         'cornerRadius': cornerRadius,
         'songTileMinWidth': songTileMinWidth,
@@ -781,6 +808,10 @@ class UiSettings {
       fallbackSecondaryColor: (m['fallbackSecondaryColor'] as num?) == null
           ? null
           : Color((m['fallbackSecondaryColor'] as num).toInt()),
+      backgroundImageAccentColor:
+          (m['backgroundImageAccentColor'] as num?) == null
+              ? null
+              : Color((m['backgroundImageAccentColor'] as num).toInt()),
       spacingScale: (m['spacingScale'] as num?)?.toDouble() ?? 1.0,
       cornerRadius: (m['cornerRadius'] as num?)?.toDouble() ?? 18.0,
       songTileMinWidth:

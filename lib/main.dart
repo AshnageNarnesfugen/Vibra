@@ -23,6 +23,7 @@ import 'providers/playback_controller.dart';
 import 'services/adaptive_luminance_service.dart';
 import 'services/ambient_video_palette_service.dart';
 import 'services/app_storage.dart';
+import 'services/background_accent_extractor.dart';
 import 'services/audio_service.dart';
 import 'services/blurred_background.dart';
 import 'services/wakelock_controller.dart';
@@ -273,6 +274,12 @@ Future<void> main() async {
   // el platform-channel falla (desktop sin permisos, emulador, etc.), el
   // resolver cae a defaults razonables.
   final network = NetworkQualityResolver(settings);
+
+  // Backfill del acento de la imagen de fondo custom: usuarios que
+  // eligieron su imagen antes de que existiera la extracción no tienen
+  // `backgroundImageAccentColor` guardado — se calcula una vez aquí.
+  // No-op si no hay imagen o si ya está cacheado.
+  unawaited(ensureBackgroundImageAccent(settings));
 
   final playback = PlaybackController(
     audio: audio,

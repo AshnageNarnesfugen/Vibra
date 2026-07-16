@@ -175,7 +175,7 @@ class CustomizedBackground extends StatelessWidget {
             : settings.solidBackgroundColor;
       case BackgroundMode.image:
       case BackgroundMode.animatedGradient:
-        baseColor = palette?.dominant ?? settings.fallbackAccentColor;
+        baseColor = palette?.dominant ?? settings.effectiveFallbackAccent;
     }
 
     return Stack(

@@ -267,7 +267,15 @@ class _SongContextSheet extends StatelessWidget {
 
   void _gotoArtist(BuildContext context, String browseId) {
     final s = UiSettingsScope.of(context);
+    // Capturar el root navigator ANTES de cerrar el sheet — su context
+    // queda desactivado tras el pop.
+    final rootNav = Navigator.of(context, rootNavigator: true);
     Navigator.of(context).pop();
+    // Cierra la vista Reproduciendo si está abierta: ArtistScreen se pushea
+    // en el navigator de la TAB, que queda DEBAJO del player (vive en el
+    // root navigator). Sin esto la navegación "funcionaba" pero tapada —
+    // el usuario daba tap sin ver nada hasta minimizar el player.
+    rootNav.popUntil((r) => r.settings.name != kPlayerRouteName);
     TabNavigation.pushInActiveTab(
       ArtistScreen(browseId: browseId),
       style: s.transitionStyle,
@@ -277,7 +285,11 @@ class _SongContextSheet extends StatelessWidget {
 
   void _gotoAlbum(BuildContext context, String browseId, String? thumb) {
     final s = UiSettingsScope.of(context);
+    final rootNav = Navigator.of(context, rootNavigator: true);
     Navigator.of(context).pop();
+    // Mismo caso que _gotoArtist: cerrar el player para que AlbumScreen
+    // quede visible de inmediato.
+    rootNav.popUntil((r) => r.settings.name != kPlayerRouteName);
     TabNavigation.pushInActiveTab(
       AlbumScreen(browseId: browseId, initialThumb: thumb),
       style: s.transitionStyle,
