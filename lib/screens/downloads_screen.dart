@@ -138,7 +138,13 @@ class DownloadsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-            SizedBox(height: tokens.gap),
+            // Spacer final para que el último ítem libre la bottom bar +
+            // mini player (flotan ENCIMA del contenido de la tab) — mismo
+            // patrón que album/artist/playlist screens. Sin esto el scroll
+            // quedaba truncado: las últimas filas eran inalcanzables.
+            SizedBox(
+              height: 200 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
           ],
         ),
       ),
