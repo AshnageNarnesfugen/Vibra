@@ -24,9 +24,13 @@ import '../core/dev_log.dart';
 ///
 /// **Sincronización con el audio**:
 ///   - Escucha `PlaybackController` y replica play/pause.
-///   - Cada 3s comprueba el offset entre `video.position` y `audio.position`;
-///     si supera 800 ms hace `seekTo(audio.position)` (umbral generoso para
-///     evitar seeks innecesarios que provocan buffer underrun).
+///   - Cada 1s mide el drift video↔audio: >400 ms corrige con seek duro;
+///     120-400 ms con nudge de velocidad (±6%, converge suave sin tirar
+///     el buffer del decoder); <120 ms el video corre a la velocidad base
+///     del audio (incluye el setting de speed del usuario).
+///   - Al cambiar de canción, el video viejo se descarta INMEDIATAMENTE
+///     (la UI cae a la carátula) en vez de seguir mostrando frames viejos
+///     mientras el nuevo resuelve URL + inicializa.
 ///   - El toggle del audio (video↔audio principal) está debounceado 300 ms:
 ///     si el usuario toggla rápido, solo aplicamos el último estado.
 class MusicVideoPlayer extends ChangeNotifier {
@@ -59,6 +63,11 @@ class MusicVideoPlayer extends ChangeNotifier {
   bool _busy = false;
   Timer? _syncTimer;
   StreamSubscription<Duration>? _seekSub;
+
+  /// Última velocidad aplicada al controller de video (base del audio o
+  /// un nudge de corrección). Evita llamadas redundantes a
+  /// setPlaybackSpeed en cada tick del sync timer.
+  double? _videoSpeed;
 
   /// Debounce del routing audio. Si el usuario toggla rápido el botón
   /// "ver video", postponemos `_applyAudioRouting` hasta que pasen 300 ms
@@ -211,8 +220,20 @@ class MusicVideoPlayer extends ChangeNotifier {
     try {
       while (_loadedVideoId != _targetVideoId) {
         final target = _targetVideoId;
-        if (target == null) {
+        // Soltar el video viejo INMEDIATAMENTE al cambiar de canción.
+        // Antes se quedaba montado y reproduciéndose en loop durante los
+        // 2-4s que tardan resolver la URL + inicializar el nuevo → el
+        // usuario veía frames del video anterior con el audio de la
+        // canción nueva. Con el dispose temprano la UI cae a la carátula
+        // al instante y el video nuevo aparece ya sincronizado. También
+        // desmutea el audio principal de inmediato (si el video viejo
+        // era la fuente de audio, la canción nueva sonaba tarde).
+        if (_controller != null) {
           await _disposeController();
+          _loadedVideoId = null;
+          notifyListeners();
+        }
+        if (target == null) {
           _loadedVideoId = null;
           notifyListeners();
           continue;
@@ -240,6 +261,14 @@ class MusicVideoPlayer extends ChangeNotifier {
           await next.initialize();
           await next.setLooping(true);
           await next.setVolume(0);
+          // El video corre a la MISMA velocidad que el audio — sin esto,
+          // con speed ≠ 1× el video derivaba sin parar y el sync timer
+          // vivía corrigiendo con seeks (stutter constante).
+          final baseSpeed = playback.currentSpeed;
+          try {
+            await next.setPlaybackSpeed(baseSpeed);
+          } catch (_) {}
+          _videoSpeed = baseSpeed;
           // Posicionarlo donde está el audio AHORA. Si el audio lleva 1:30,
           // arrancar el video desde 0 sería incomodísimo visualmente.
           try {
@@ -253,7 +282,6 @@ class MusicVideoPlayer extends ChangeNotifier {
             await next.dispose();
             continue;
           }
-          final old = _controller;
           _controller = next;
           _loadedVideoId = target;
           _startSyncTimer();
@@ -261,7 +289,6 @@ class MusicVideoPlayer extends ChangeNotifier {
           // canción anterior, el nuevo controller debe tomar audio.
           await _applyAudioRouting();
           notifyListeners();
-          await old?.dispose();
         } catch (e) {
           devLog('MusicVideoPlayer load $target failed: $e');
           try {
@@ -278,10 +305,15 @@ class MusicVideoPlayer extends ChangeNotifier {
 
   void _startSyncTimer() {
     _syncTimer?.cancel();
-    // 3s + threshold 800 ms: agresividad baja para no provocar buffer
-    // underrun. El blip visual de hasta 800 ms es imperceptible para el
-    // usuario y no rompe la experiencia.
-    _syncTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+    // Corrección en dos niveles, cada 1s:
+    //   - Drift > 400 ms → seek duro (única forma de recuperar rápido).
+    //   - Drift 120-400 ms → nudge de velocidad (±6%): el video converge
+    //     suave en 2-5s SIN tirar el buffer del decoder. El esquema viejo
+    //     (seek solo con drift > 800 ms cada 3s) dejaba el video hasta
+    //     0.8s desfasado de forma permanente — visible en el lip-sync.
+    //   - Drift < 120 ms → velocidad base (la del audio). Esto también
+    //     mantiene el video a la velocidad del setting speed del usuario.
+    _syncTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
       final c = _controller;
       if (c == null || !c.value.isInitialized) return;
       if (!playback.isPlaying) return;
@@ -291,10 +323,20 @@ class MusicVideoPlayer extends ChangeNotifier {
       try {
         final vidPos = await c.position;
         if (vidPos == null) return;
-        final audPos = playback.position;
-        final diff = (vidPos.inMilliseconds - audPos.inMilliseconds).abs();
-        if (diff > 800) {
-          await c.seekTo(audPos);
+        final base = playback.currentSpeed;
+        final driftMs =
+            vidPos.inMilliseconds - playback.position.inMilliseconds;
+        final absDrift = driftMs.abs();
+        var desiredSpeed = base;
+        if (absDrift > 400) {
+          await c.seekTo(playback.position);
+        } else if (absDrift > 120) {
+          // Video adelantado → frenarlo un poco; atrasado → acelerarlo.
+          desiredSpeed = base * (driftMs > 0 ? 0.94 : 1.06);
+        }
+        if (_videoSpeed != desiredSpeed) {
+          await c.setPlaybackSpeed(desiredSpeed);
+          _videoSpeed = desiredSpeed;
         }
       } catch (_) {}
     });
@@ -303,6 +345,7 @@ class MusicVideoPlayer extends ChangeNotifier {
   Future<void> _disposeController() async {
     _syncTimer?.cancel();
     _syncTimer = null;
+    _videoSpeed = null;
     final c = _controller;
     _controller = null;
     if (c != null) {

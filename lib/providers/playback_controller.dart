@@ -310,6 +310,12 @@ class PlaybackController extends ChangeNotifier {
   double? _appliedSpeed;
   double? _appliedPitchMul;
 
+  /// Velocidad de reproducción efectiva actual. La consume el
+  /// MusicVideoPlayer para que el video corra al MISMO ritmo que el audio
+  /// — sin esto, con velocidad ≠ 1× el video derivaba constantemente y el
+  /// sync timer vivía haciendo seeks.
+  double get currentSpeed => _appliedSpeed ?? 1.0;
+
   /// Aplica `playbackSpeed` y `playbackPitchSemitones` (convertido a
   /// multiplicador) al player. Llamar después de cada `setAudioSource` y
   /// cuando el usuario cambie los sliders del sheet. Es idempotente —
