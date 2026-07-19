@@ -49,6 +49,24 @@ class DownloadService extends ChangeNotifier {
   final Map<String, double> _inProgress = {};
   final Map<String, StreamSubscription<List<int>>> _activeSubs = {};
 
+  /// Cliente HTTP compartido entre descargas. Antes se creaba un
+  /// `http.Client()` nuevo por descarga y jamás se cerraba (leak de
+  /// sockets) — además de perder el keep-alive entre chunks.
+  final http.Client _http = http.Client();
+
+  /// Completer de la transferencia en vuelo por canción. [cancel] lo
+  /// completa con error para abortar el `await`: `sub.cancel()` solo
+  /// silencia el stream (onDone ya no dispara), así que sin esto cancelar
+  /// la descarga ACTIVA dejaba el processor esperando un completer que
+  /// nunca completaba → la cola quedaba atascada para siempre.
+  final Map<String, Completer<void>> _inflight = {};
+
+  /// Tamaño de chunk para descargas por rango. googlevideo ESTRANGULA los
+  /// GET de archivo completo (limita a ~velocidad de reproducción); pedir
+  /// el archivo en rangos de unos MB se sirve a velocidad plena — el
+  /// mismo truco que usan NewPipe y yt-dlp.
+  static const int _chunkBytes = 3 * 1024 * 1024;
+
   /// Cola de descargas PENDIENTES (aún no arrancadas). Se procesan de a
   /// una — el transcode a MP3 es CPU-intensivo, correr varias en paralelo
   /// haría thrashing. FIFO: el orden en que el usuario las encoló.
@@ -271,62 +289,85 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Ejecuta la descarga real de [song] (resuelve URL, stream a disco,
+  /// Ejecuta la descarga real de [song] (resuelve URL, chunks a disco,
   /// opcional transcode MP3 + metadata). Lanza en error.
   Future<void> _performDownload(Song song) async {
     _inProgress[song.id] = 0.0;
     notifyListeners();
 
+    // YouTube Music sirve audio típicamente como webm/opus o m4a/aac.
+    // Inferimos la extensión del Content-Type real para reproducir bien.
+    final tempPath = '${_downloadsDir.path}/${_safeTempId(song.id)}.part';
+    final tempFile = File(tempPath);
+    IOSink? sink;
     try {
       final url = await _streaming.resolveStreamUrl(song.streamingId!);
-      // YouTube Music sirve audio típicamente como webm/opus o m4a/aac.
-      // Inferimos la extensión del Content-Type real para reproducir bien.
-      final tempPath = '${_downloadsDir.path}/${_safeTempId(song.id)}.part';
-      final tempFile = File(tempPath);
       if (await tempFile.exists()) await tempFile.delete();
+      sink = tempFile.openWrite();
 
-      final req = http.Request('GET', Uri.parse(url));
-      final res = await http.Client().send(req);
-      if (res.statusCode != 200) {
-        throw HttpException('HTTP ${res.statusCode}');
-      }
-      final total = res.contentLength ?? 0;
-      final ext = _extFromContentType(res.headers['content-type']);
+      String? contentType;
+      int? total;
       var received = 0;
       var lastPct = -5;
 
-      final sink = tempFile.openWrite();
-      final completer = Completer<void>();
-      final sub = res.stream.listen(
-        (chunk) {
-          received += chunk.length;
-          sink.add(chunk);
-          if (total > 0) {
-            final pct = ((received / total) * 100).round();
-            // Throttle: solo notify cuando el progreso avanza 5 puntos para
-            // no inundar el árbol de rebuilds (cada chunk son 64KB).
-            if (pct - lastPct >= 5) {
-              lastPct = pct;
-              _inProgress[song.id] = received / total;
-              notifyListeners();
-            }
+      void onBytes(int n) {
+        received += n;
+        final t = total;
+        if (t != null && t > 0) {
+          final pct = ((received / t) * 100).round();
+          // Throttle: solo notify cuando el progreso avanza 5 puntos para
+          // no inundar el árbol de rebuilds (cada chunk son 64KB).
+          if (pct - lastPct >= 5) {
+            lastPct = pct;
+            // Cap a 0.98: 0.99 está reservado como señal de "transcodeando"
+            // para la UI.
+            _inProgress[song.id] = (received / t).clamp(0.0, 0.98);
+            notifyListeners();
           }
-        },
-        onDone: () async {
-          await sink.flush();
-          await sink.close();
-          completer.complete();
-        },
-        onError: (e) async {
-          await sink.close();
-          completer.completeError(e);
-        },
-        cancelOnError: true,
-      );
-      _activeSubs[song.id] = sub;
+        }
+      }
 
-      await completer.future;
-      _activeSubs.remove(song.id);
+      // Descarga por RANGOS secuenciales en vez de un GET completo:
+      // googlevideo limita la velocidad de requests de archivo entero,
+      // pero sirve los rangos de pocos MB a velocidad plena.
+      var rangeSupported = true;
+      while (true) {
+        if (_cancelRequested.contains(song.id)) {
+          throw const _DownloadCanceled();
+        }
+        final req = http.Request('GET', Uri.parse(url));
+        req.headers['Range'] =
+            'bytes=$received-${received + _chunkBytes - 1}';
+        final res = await _http.send(req);
+        if (res.statusCode == 206) {
+          // Total real desde Content-Range ("bytes 0-x/TOTAL").
+          total ??= _totalFromContentRange(res.headers['content-range']);
+        } else if (res.statusCode == 200) {
+          // El server ignoró el Range → el archivo completo viene en esta
+          // única respuesta.
+          rangeSupported = false;
+          total = res.contentLength;
+        } else if (res.statusCode == 416 && received > 0) {
+          // Pedimos más allá del EOF (total era desconocido) → terminado.
+          break;
+        } else {
+          throw HttpException('HTTP ${res.statusCode}');
+        }
+        contentType ??= res.headers['content-type'];
+
+        final chunkStart = received;
+        await _pipe(song.id, res, sink, onBytes);
+
+        if (!rangeSupported) break;
+        if (total != null && received >= total) break;
+        // Chunk corto o vacío sin total conocido → llegamos al final.
+        if (received - chunkStart < _chunkBytes) break;
+      }
+
+      final ext = _extFromContentType(contentType);
+      await sink.flush();
+      await sink.close();
+      sink = null;
 
       // Nombre de archivo LEGIBLE "Artista - Título.ext" en lugar del
       // songId opaco. Como ahora los archivos viven en una carpeta
@@ -396,18 +437,65 @@ class DownloadService extends ChangeNotifier {
         // ignore: discarded_futures
         AppStorage.instance.scanFile(finalPath);
       }
+    } on _DownloadCanceled {
+      // Cancelada por el usuario — limpieza silenciosa, sin rethrow (el
+      // processor sigue con la siguiente de la cola).
+      await _cleanupFailed(song, sink, tempFile);
     } catch (e) {
       devLog('DownloadService download ${song.id} failed: $e');
-      _inProgress.remove(song.id);
-      _activeSubs.remove(song.id);
-      // Limpia el .part parcial.
-      try {
-        final part = File('${_downloadsDir.path}/${_safeTempId(song.id)}.part');
-        if (await part.exists()) await part.delete();
-      } catch (_) {}
-      notifyListeners();
+      await _cleanupFailed(song, sink, tempFile);
       rethrow;
     }
+  }
+
+  /// Limpieza común de una descarga abortada: cierra el sink, borra el
+  /// .part parcial y saca la canción de los mapas de estado.
+  Future<void> _cleanupFailed(Song song, IOSink? sink, File tempFile) async {
+    _inProgress.remove(song.id);
+    _activeSubs.remove(song.id);
+    _inflight.remove(song.id);
+    try {
+      await sink?.close();
+    } catch (_) {}
+    try {
+      if (await tempFile.exists()) await tempFile.delete();
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Vuelca el body de [res] al [sink] con soporte de cancelación: el
+  /// completer queda registrado en [_inflight] para que [cancel] pueda
+  /// abortar el await aunque el stream ya esté silenciado.
+  Future<void> _pipe(String songId, http.StreamedResponse res, IOSink sink,
+      void Function(int) onBytes) {
+    final completer = Completer<void>();
+    final sub = res.stream.listen(
+      (chunk) {
+        sink.add(chunk);
+        onBytes(chunk.length);
+      },
+      onDone: () {
+        if (!completer.isCompleted) completer.complete();
+      },
+      onError: (Object e) {
+        if (!completer.isCompleted) completer.completeError(e);
+      },
+      cancelOnError: true,
+    );
+    _activeSubs[songId] = sub;
+    _inflight[songId] = completer;
+    return completer.future.whenComplete(() {
+      _activeSubs.remove(songId);
+      _inflight.remove(songId);
+    });
+  }
+
+  /// Total del archivo desde el header `Content-Range: bytes 0-x/TOTAL`.
+  static int? _totalFromContentRange(String? header) {
+    if (header == null) return null;
+    final slash = header.lastIndexOf('/');
+    if (slash < 0) return null;
+    return int.tryParse(header.substring(slash + 1).trim());
   }
 
   /// Cancela una descarga: si está en cola la quita, si está en curso
@@ -418,9 +506,17 @@ class DownloadService extends ChangeNotifier {
     _cancelRequested.add(songId);
     _queue.removeWhere((s) => s.id == songId);
 
-    // Si está descargando ahora, aborta el stream activo.
+    // Si está descargando ahora, aborta el stream activo Y completa el
+    // await de la transferencia. `sub.cancel()` solo silencia el stream
+    // (su onDone ya no dispara) — sin completar el completer, el
+    // processor quedaba esperando para SIEMPRE y la cola se atascaba:
+    // las descargas pendientes nunca arrancaban tras cancelar la activa.
     final sub = _activeSubs.remove(songId);
     await sub?.cancel();
+    final inflight = _inflight.remove(songId);
+    if (inflight != null && !inflight.isCompleted) {
+      inflight.completeError(const _DownloadCanceled());
+    }
     _inProgress.remove(songId);
     try {
       final part = File('${_downloadsDir.path}/${_safeTempId(songId)}.part');
@@ -515,6 +611,19 @@ class DownloadService extends ChangeNotifier {
     if (lc.contains('mp4') || lc.contains('aac')) return '.m4a';
     return '.m4a';
   }
+
+  @override
+  void dispose() {
+    _http.close();
+    super.dispose();
+  }
+}
+
+/// Señal interna de "descarga cancelada por el usuario" — distingue el
+/// abort intencional de un error real (el primero no se loguea como fallo
+/// ni se rethrowea).
+class _DownloadCanceled implements Exception {
+  const _DownloadCanceled();
 }
 
 class _DownloadedTrack {

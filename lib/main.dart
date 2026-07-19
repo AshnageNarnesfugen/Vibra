@@ -426,7 +426,13 @@ Future<void> main() async {
         ),
         if (downloads != null)
           ChangeNotifierProvider<DownloadService>.value(value: downloads),
-        Provider<DownloadService?>.value(value: downloads),
+        // REACTIVO también en la variante nullable: la UI de descargas
+        // (DownloadsScreen, badge de biblioteca, context sheet) consume
+        // `watch<DownloadService?>()`, que resuelve a ESTE provider. Con
+        // un Provider plano, notifyListeners() no rebuildeaba nada — la
+        // pantalla no reflejaba fin de descarga ni borrados hasta salir
+        // y volver a entrar.
+        ChangeNotifierProvider<DownloadService?>.value(value: downloads),
         // Solo necesitamos la variante nullable: los consumidores usan
         // `Provider.of<BlurredBackgroundService?>()` y reciben el valor
         // real cuando el provider está montado. La doble registración
