@@ -815,9 +815,11 @@ class PlaybackController extends ChangeNotifier {
     if (_queue.isEmpty) return;
     final atEnd = _index >= _queue.length - 1;
     if (atEnd) {
-      // Final de cola. En modo `all` envuelve; en `off` para; en `one` no
-      // debería llegar acá (lo intercepta _onTrackComplete).
+      // Final de cola. En modo `all` envuelve; en `off` intenta autoplay
+      // con recomendaciones (como YT Music) y si no puede, para. En `one`
+      // no debería llegar acá (lo intercepta _onTrackComplete).
       if (_repeat == PlaybackRepeatMode.off) {
+        if (await _tryAutoplayExtend()) return;
         await audio.player.pause();
         return;
       }
@@ -825,6 +827,43 @@ class PlaybackController extends ChangeNotifier {
       return;
     }
     await playAt(_index + 1);
+  }
+
+  /// Autoplay al agotar la cola: pide el "Up next" de YT Music seedeado
+  /// en la última canción, appenda lo nuevo y sigue reproduciendo.
+  /// Devuelve `true` si logró extender y avanzar; `false` deja al caller
+  /// pausar como antes (setting apagado, canción local, endpoint vacío…).
+  Future<bool> _tryAutoplayExtend() async {
+    if (!settings.value.autoplayRelated) return false;
+    final seed = currentSong;
+    final seedId = seed?.streamingId;
+    if (seed == null || !seed.isStreaming || seedId == null) return false;
+    if (_pullingRecs) return false;
+    _pullingRecs = true;
+    try {
+      final recs = await streaming.getRecommendedQueue(seedId);
+      if (recs.isEmpty) return false;
+      final existing =
+          _queue.map((s) => s.streamingId).whereType<String>().toSet();
+      final newSongs = <Song>[
+        for (final t in recs)
+          if (!existing.contains(t.videoId)) t.toSong(),
+      ];
+      if (newSongs.isEmpty) return false;
+      // Si mientras esperábamos el endpoint el usuario cambió algo (tap a
+      // otra canción, nueva cola), abortamos — sus acciones mandan.
+      if (currentSong?.streamingId != seedId) return false;
+      final insertAt = _queue.length;
+      _queue.addAll(newSongs);
+      _lastRecsSeedId = seedId;
+      notifyListeners();
+      await playAt(insertAt);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _pullingRecs = false;
+    }
   }
 
   Future<void> previous() async {

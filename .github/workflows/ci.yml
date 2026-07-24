@@ -1,6 +1,6 @@
 name: CI
 
-# Chequeo rápido en cada push/PR a main: pub get + analyze.
+# Chequeo rápido en cada push/PR a main: pub get + analyze + tests.
 # No compila el APK (eso lo hace release.yml en tags) para que el CI
 # sea veloz.
 on:
@@ -11,7 +11,7 @@ on:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,3 +21,6 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze
+      # Tests de lógica pura (settings, auth, contraste). Rápidos — no
+      # levantan emulador ni platform channels.
+      - run: flutter test

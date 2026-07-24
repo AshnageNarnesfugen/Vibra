@@ -206,6 +206,7 @@ class UiSettings {
     this.videoQualityCellular = MediaQuality.low,
     this.downloadQuality = MediaQuality.high,
     this.downloadAsMp3 = true,
+    this.autoplayRelated = true,
     this.floatingMiniEnabled = false,
     this.fadeOnPlayPauseEnabled = false,
     this.fadeDurationMs = 350,
@@ -328,6 +329,11 @@ class UiSettings {
   /// calidad técnica (sin re-encode lossy→lossy) y más rápido, pero menos
   /// portable. Solo Android (el transcoder usa MediaCodec nativo).
   final bool downloadAsMp3;
+
+  /// Autoplay al acabar la cola (solo streaming, repeat off): en vez de
+  /// parar en silencio, sigue con recomendaciones relacionadas a la
+  /// última canción — como hace YT Music. Default ON.
+  final bool autoplayRelated;
 
   /// Mini reproductor flotante (Dynamic Island estilo) sobre el sistema.
   /// Solo Android. Requiere permiso `SYSTEM_ALERT_WINDOW` que el usuario
@@ -529,6 +535,7 @@ class UiSettings {
     MediaQuality? videoQualityCellular,
     MediaQuality? downloadQuality,
     bool? downloadAsMp3,
+    bool? autoplayRelated,
     bool? floatingMiniEnabled,
     bool? fadeOnPlayPauseEnabled,
     int? fadeDurationMs,
@@ -597,6 +604,7 @@ class UiSettings {
           videoQualityCellular ?? this.videoQualityCellular,
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadAsMp3: downloadAsMp3 ?? this.downloadAsMp3,
+      autoplayRelated: autoplayRelated ?? this.autoplayRelated,
       floatingMiniEnabled: floatingMiniEnabled ?? this.floatingMiniEnabled,
       fadeOnPlayPauseEnabled:
           fadeOnPlayPauseEnabled ?? this.fadeOnPlayPauseEnabled,
@@ -688,6 +696,7 @@ class UiSettings {
         'videoQualityCellular': videoQualityCellular.name,
         'downloadQuality': downloadQuality.name,
         'downloadAsMp3': downloadAsMp3,
+        'autoplayRelated': autoplayRelated,
         'floatingMiniEnabled': floatingMiniEnabled,
         'fadeOnPlayPauseEnabled': fadeOnPlayPauseEnabled,
         'fadeDurationMs': fadeDurationMs,
@@ -774,6 +783,7 @@ class UiSettings {
         orElse: () => MediaQuality.high,
       ),
       downloadAsMp3: m['downloadAsMp3'] as bool? ?? true,
+      autoplayRelated: m['autoplayRelated'] as bool? ?? true,
       floatingMiniEnabled: m['floatingMiniEnabled'] as bool? ?? false,
       fadeOnPlayPauseEnabled:
           m['fadeOnPlayPauseEnabled'] as bool? ?? false,

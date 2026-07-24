@@ -81,6 +81,21 @@ class QualitySettingsScreen extends StatelessWidget {
           GlassCard(
             child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
+              title: const Text('Autoplay al acabar la cola'),
+              subtitle: const Text(
+                'Cuando la cola de streaming termina (sin repetir), sigue '
+                'con canciones relacionadas a la última — como YT Music. '
+                'Apágalo si prefieres que la música pare al terminar.',
+              ),
+              value: s.autoplayRelated,
+              onChanged: (v) =>
+                  ctrl.update((p) => p.copyWith(autoplayRelated: v)),
+            ),
+          ),
+          SizedBox(height: tokens.gap),
+          GlassCard(
+            child: SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
               title: const Text('Descargar como MP3'),
               subtitle: const Text(
                 'Convierte la descarga a MP3 256 kbps con metadata '
