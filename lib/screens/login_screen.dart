@@ -11,7 +11,6 @@ import '../core/theme/layout_tokens.dart';
 import '../services/streaming/streaming_service.dart';
 import '../services/streaming/yt_auth.dart';
 import '../widgets/glass_card.dart';
-import 'oauth_device_code_screen.dart';
 import '../core/dev_log.dart';
 
 /// Channel nativo para el estado web del WebView (Android). Métodos:
@@ -57,21 +56,6 @@ class _LoginScreenState extends State<LoginScreen> {
       visitorData: result.visitorData,
       dataSyncId: result.dataSyncId,
     );
-  }
-
-  /// Flujo Device Code (OAuth, recomendado). Sin WebView, sin cookies:
-  /// el usuario autoriza en su navegador real. La pantalla maneja todo
-  /// el polling y devuelve true cuando el token está guardado.
-  Future<void> _launchDeviceCode() async {
-    final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const OauthDeviceCodeScreen()),
-    );
-    if (!mounted) return;
-    if (ok == true) {
-      // Pop la propia login screen para que el usuario vuelva a ajustes
-      // viendo "Sesión activa".
-      Navigator.of(context).pop(true);
-    }
   }
 
   Future<void> _pasteManually() async {
@@ -389,57 +373,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-            SizedBox(height: tokens.gap),
-            // ─── Métodos alternativos / experimentales ───
-            ExpansionTile(
-              shape: const RoundedRectangleBorder(side: BorderSide.none),
-              collapsedShape:
-                  const RoundedRectangleBorder(side: BorderSide.none),
-              tilePadding: EdgeInsets.zero,
-              title: Text(
-                'Métodos alternativos',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              children: [
-                SizedBox(height: tokens.gapSm),
-                GlassCard(
-                  padding: tokens.tilePadding(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.warning_amber_rounded,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.error),
-                          SizedBox(width: tokens.gapSm),
-                          Expanded(
-                            child: Text(
-                              'No recomendado — Google lo limitó',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: tokens.gapSm),
-                      Text(
-                        'OAuth: funciona el login pero las requests a la '
-                        'API retornan 400 desde finales de 2024 (mismo '
-                        'issue que ytmusicapi).',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: tokens.gap),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _launchDeviceCode,
-                  icon: const Icon(Icons.shield_outlined),
-                  label: const Text('Iniciar sesión OAuth (limitado)'),
-                ),
-                SizedBox(height: tokens.gapSm),
-              ],
-            ),
+            // El flujo OAuth (Device Code) se retiró: Google lo cerró
+            // contra music.youtube.com a fines de 2024 — solo quedan
+            // WebView (recomendado) y paste de cookie.
           ] else
             OutlinedButton.icon(
               onPressed: _busy ? null : _logout,

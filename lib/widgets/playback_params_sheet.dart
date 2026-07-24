@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/theme/layout_tokens.dart';
+import '../providers/playback_controller.dart';
 import 'glass_card.dart';
 
 /// Bottom sheet con sliders de velocidad de reproducción y pitch.
@@ -164,6 +165,14 @@ class _PlaybackParamsSheet extends StatelessWidget {
                     ctrl.update((p) => p.copyWith(lockPitchToSpeed: v)),
               ),
               SizedBox(height: tokens.gapSm),
+              Divider(
+                color: scheme.outlineVariant.withValues(alpha: 0.3),
+                height: 1,
+              ),
+              SizedBox(height: tokens.gap),
+              // ─────────── Sleep timer ───────────
+              const _SleepTimerSection(),
+              SizedBox(height: tokens.gapSm),
             ],
           ),
         ),
@@ -220,4 +229,80 @@ String playbackParamsPillText({
   if (speedTxt.isEmpty) return pitchTxt;
   if (pitchTxt.isEmpty) return speedTxt;
   return '$speedTxt · $pitchTxt';
+}
+
+/// Sección de sleep timer dentro del sheet de velocidad/tono. El estado
+/// vive en [PlaybackController] (sobrevive a cerrar el sheet); aquí solo
+/// se muestra y se controla.
+class _SleepTimerSection extends StatelessWidget {
+  const _SleepTimerSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final pb = context.watch<PlaybackController>();
+    final tokens = LayoutTokensScope.of(context);
+    final scheme = Theme.of(context).colorScheme;
+
+    final deadline = pb.sleepDeadline;
+    String? statusText;
+    if (pb.sleepAtTrackEnd) {
+      statusText = 'Se pausará al terminar esta canción.';
+    } else if (deadline != null) {
+      final hhmm = TimeOfDay.fromDateTime(deadline).format(context);
+      statusText = 'Se pausará a las $hhmm.';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.bedtime_rounded,
+              size: 22,
+              color: pb.sleepTimerActive
+                  ? scheme.primary
+                  : scheme.onSurface.withValues(alpha: 0.8),
+            ),
+            SizedBox(width: tokens.gapSm),
+            Text('Temporizador de apagado',
+                style: Theme.of(context).textTheme.titleSmall),
+            const Spacer(),
+            if (pb.sleepTimerActive)
+              TextButton(
+                onPressed: pb.cancelSleepTimer,
+                child: const Text('Cancelar'),
+              ),
+          ],
+        ),
+        if (statusText != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              statusText,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.primary,
+                  ),
+            ),
+          ),
+        SizedBox(height: tokens.gapSm),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final min in const [15, 30, 45, 60])
+              ActionChip(
+                label: Text('$min min'),
+                onPressed: () =>
+                    pb.startSleepTimer(Duration(minutes: min)),
+              ),
+            ActionChip(
+              label: const Text('Fin de canción'),
+              onPressed: pb.setSleepAtTrackEnd,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }

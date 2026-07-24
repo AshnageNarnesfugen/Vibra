@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/settings/ui_settings.dart';
@@ -102,6 +104,156 @@ class PlaybackController extends ChangeNotifier {
       (_index >= 0 && _index < _queue.length) ? _queue[_index] : null;
   List<Song> get queue => List.unmodifiable(_queue);
   int get currentIndex => _index;
+
+  // ─── Persistencia de la sesión (cola + índice + posición) ───
+  // La cola sobrevive cierres de app: se guarda debounceada en cada
+  // notifyListeners y se restaura al arrancar SIN reproducir — el mini
+  // player aparece con la última canción lista y el primer play retoma
+  // donde ibas. Sin esto, cerrar la app perdía la cola completa.
+  static const _kSessionKey = 'vibra.queueSession.v1';
+
+  /// Cap de canciones persistidas — con autoplay la cola puede crecer
+  /// indefinidamente; guardamos una ventana alrededor de lo relevante.
+  static const _kSessionMaxSongs = 300;
+
+  Timer? _persistDebounce;
+
+  /// `true` cuando la cola viene de una restauración y AÚN no se cargó
+  /// ninguna fuente de audio. El primer play (togglePlayPause) carga la
+  /// canción y hace seek a la posición guardada. Se limpia en cuanto el
+  /// usuario reproduce cualquier cosa.
+  bool _restorePending = false;
+  int _restorePositionMs = 0;
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    _persistDebounce?.cancel();
+    _persistDebounce = Timer(const Duration(seconds: 1), () {
+      // ignore: discarded_futures
+      _persistSession();
+    });
+  }
+
+  Future<void> _persistSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_queue.isEmpty) {
+        await prefs.remove(_kSessionKey);
+        return;
+      }
+      var songs = _queue;
+      var index = _index;
+      if (songs.length > _kSessionMaxSongs) {
+        // Ventana centrada en la canción actual.
+        final start = (index - 50).clamp(0, songs.length - _kSessionMaxSongs);
+        songs = songs.sublist(start, start + _kSessionMaxSongs);
+        index = (index - start).clamp(0, songs.length - 1);
+      }
+      await prefs.setString(
+        _kSessionKey,
+        jsonEncode({
+          'songs': [for (final s in songs) s.toJson()],
+          'index': index,
+          'positionMs': _positionNotifier.value.inMilliseconds,
+        }),
+      );
+    } catch (e) {
+      devLog('persistSession failed: $e');
+    }
+  }
+
+  /// Restaura la última sesión guardada. Llamar UNA vez al arrancar,
+  /// después de construir el controller. No reproduce nada — solo deja
+  /// la cola lista y el mini player visible.
+  Future<void> restoreSession() async {
+    if (_queue.isNotEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kSessionKey);
+      if (raw == null || raw.isEmpty) return;
+      final m = jsonDecode(raw);
+      if (m is! Map<String, dynamic>) return;
+      final rawSongs = m['songs'];
+      if (rawSongs is! List || rawSongs.isEmpty) return;
+      final songs = <Song>[
+        for (final s in rawSongs)
+          if (s is Map<String, dynamic>) Song.fromJson(s),
+      ];
+      if (songs.isEmpty) return;
+      // El usuario pudo empezar a reproducir mientras leíamos prefs.
+      if (_queue.isNotEmpty) return;
+      _queue.addAll(songs);
+      _index = ((m['index'] as num?)?.toInt() ?? 0)
+          .clamp(0, _queue.length - 1);
+      _restorePositionMs = (m['positionMs'] as num?)?.toInt() ?? 0;
+      _restorePending = true;
+      devLog('restoreSession: ${songs.length} canciones, index=$_index');
+      notifyListeners();
+    } catch (e) {
+      devLog('restoreSession failed: $e');
+    }
+  }
+
+  // ─── Sleep timer ───
+  // Dos modos excluyentes: por minutos (pausa con fade al vencer) o
+  // "al terminar la canción actual". Estado en el controller para que
+  // sobreviva a cerrar/abrir el sheet y se vea desde cualquier UI.
+  Timer? _sleepTimer;
+  DateTime? _sleepDeadline;
+  bool _sleepAtTrackEnd = false;
+
+  /// Hora a la que se pausará (modo minutos), o null.
+  DateTime? get sleepDeadline => _sleepDeadline;
+
+  /// `true` si se pausará al terminar la canción actual.
+  bool get sleepAtTrackEnd => _sleepAtTrackEnd;
+  bool get sleepTimerActive => _sleepDeadline != null || _sleepAtTrackEnd;
+
+  void startSleepTimer(Duration d) {
+    _sleepTimer?.cancel();
+    _sleepAtTrackEnd = false;
+    _sleepDeadline = DateTime.now().add(d);
+    _sleepTimer = Timer(d, () async {
+      _sleepDeadline = null;
+      _sleepTimer = null;
+      // Pausa con el fade configurado — cortar la música en seco es lo
+      // contrario del objetivo de un sleep timer.
+      await _fadeOutAndPause();
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  void setSleepAtTrackEnd() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
+    _sleepAtTrackEnd = true;
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
+    _sleepAtTrackEnd = false;
+    notifyListeners();
+  }
+
+  /// Primer play tras una restauración: carga la fuente y retoma en la
+  /// posición guardada.
+  Future<void> _resumeRestored() async {
+    _restorePending = false;
+    final pos = _restorePositionMs;
+    _restorePositionMs = 0;
+    await playAt(_index);
+    if (pos > 3000) {
+      try {
+        await seek(Duration(milliseconds: pos));
+      } catch (_) {}
+    }
+  }
 
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
@@ -560,6 +712,9 @@ class PlaybackController extends ChangeNotifier {
 
   Future<void> playAt(int index) async {
     if (index < 0 || index >= _queue.length) return;
+    // Cualquier reproducción explícita invalida el estado "restaurado
+    // pendiente" — el usuario ya eligió qué oír.
+    _restorePending = false;
     _index = index;
     final song = _queue[_index];
 
@@ -705,6 +860,12 @@ class PlaybackController extends ChangeNotifier {
 
   Future<void> togglePlayPause() async {
     if (currentSong == null) return;
+    // Cola restaurada de la sesión anterior sin fuente cargada: el primer
+    // play carga la canción y retoma donde ibas.
+    if (_restorePending) {
+      await _resumeRestored();
+      return;
+    }
     if (_isPlaying) {
       await _fadeOutAndPause();
     } else {
@@ -803,6 +964,13 @@ class PlaybackController extends ChangeNotifier {
   /// pasa por `next()` y siempre avanza.
   Future<void> _onTrackComplete() async {
     if (_queue.isEmpty) return;
+    // Sleep timer en modo "fin de canción": pausa aquí en vez de avanzar.
+    if (_sleepAtTrackEnd) {
+      _sleepAtTrackEnd = false;
+      await audio.player.pause();
+      notifyListeners();
+      return;
+    }
     if (_repeat == PlaybackRepeatMode.one) {
       await audio.player.seek(Duration.zero);
       await audio.player.play();
@@ -957,6 +1125,8 @@ class PlaybackController extends ChangeNotifier {
   @override
   void dispose() {
     settings.removeListener(_onSettingsChanged);
+    _persistDebounce?.cancel();
+    _sleepTimer?.cancel();
     _stateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();

@@ -20,6 +20,9 @@ import 'providers/equalizer_controller.dart';
 import 'providers/library_controller.dart';
 import 'providers/lyrics_controller.dart';
 import 'providers/playback_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'screens/onboarding_screen.dart';
 import 'services/adaptive_luminance_service.dart';
 import 'services/ambient_video_palette_service.dart';
 import 'services/app_storage.dart';
@@ -38,7 +41,6 @@ import 'services/media_session_handler.dart';
 import 'services/playlist_service.dart';
 import 'services/streaming/streaming_service.dart';
 import 'services/streaming/yt_auth.dart';
-import 'services/streaming/yt_oauth_service.dart';
 import 'core/dev_log.dart';
 
 /// DSN de Sentry inyectado en build vía `--dart-define=SENTRY_DSN=https://...`.
@@ -160,69 +162,13 @@ Future<void> main() async {
   final libraryCtrl =
       LibraryController(library, settings, downloads: downloads);
 
-  // Registra el callback de refresh ANTES de cargar cualquier auth — así
-  // si la primera request encuentra el token expirado, ya tiene cómo
-  // refrescarlo sin romper la llamada.
-  streaming.onAuthRefresh = () async {
-    final refreshTok = settings.value.ytMusicRefreshToken;
-    if (refreshTok == null || refreshTok.isEmpty) return null;
-    try {
-      final svc = YtOauthService();
-      try {
-        final fresh = await svc.refresh(refreshTok);
-        // Persistir el nuevo access_token + (posible) nuevo refresh_token.
-        settings.update((s) => s.copyWith(
-              ytMusicAccessToken: fresh.accessToken,
-              ytMusicRefreshToken: fresh.refreshToken,
-              ytMusicAccessTokenExpiryEpochMs:
-                  fresh.accessTokenExpiryEpochMs,
-            ));
-        devLog('[YTM] OAuth token refreshed transparently');
-        return YtMusicAuth(
-          cookie: settings.value.ytMusicCookie ?? '',
-          visitorData: settings.value.ytMusicVisitorData,
-          dataSyncId: settings.value.ytMusicDataSyncId,
-          accessToken: fresh.accessToken,
-          refreshToken: fresh.refreshToken,
-          tokenExpiryEpochMs: fresh.accessTokenExpiryEpochMs,
-        );
-      } finally {
-        svc.close();
-      }
-    } catch (e) {
-      devLog('[YTM] OAuth refresh failed: $e');
-      // Si Google rechazó el refresh (invalid_grant = revocado), limpiamos
-      // los tokens para que la UI sepa que hay que re-login. Cualquier
-      // otro error de red lo dejamos pasar — puede ser transitorio.
-      if (e is YtOauthException && e.statusCode == 400) {
-        settings.update((s) => s.copyWith(clearYtMusicAuth: true));
-      }
-      return null;
-    }
-  };
-
-  // ─── Path 1: Tokens OAuth persistidos → prioridad sobre cookies ───
-  final savedAccessToken = settings.value.ytMusicAccessToken;
-  final savedRefreshToken = settings.value.ytMusicRefreshToken;
-  if (savedAccessToken != null || savedRefreshToken != null) {
-    streaming.setAuth(YtMusicAuth(
-      cookie: settings.value.ytMusicCookie ?? '',
-      visitorData: settings.value.ytMusicVisitorData,
-      dataSyncId: settings.value.ytMusicDataSyncId,
-      accessToken: savedAccessToken,
-      refreshToken: savedRefreshToken,
-      tokenExpiryEpochMs:
-          settings.value.ytMusicAccessTokenExpiryEpochMs,
-    ));
-    // El cliente refrescará el token automáticamente en la próxima request
-    // si está expirado (gracias al onAuthRefresh registrado arriba).
-  }
-
-  // ─── Path 2: Solo cookies legacy (sin OAuth) ───
+  // ─── Restaurar sesión por cookie (el único path vigente) ───
+  // El flujo OAuth se RETIRÓ: Google cerró el Device Code Flow del client
+  // de TV contra music.youtube.com a fines de 2024 (mismo issue que
+  // ytmusicapi) — los tokens guardados por versiones viejas se ignoran
+  // aquí y la pantalla de cuenta ofrece limpiarlos.
   final savedCookie = settings.value.ytMusicCookie;
-  if (savedCookie != null &&
-      savedAccessToken == null &&
-      savedRefreshToken == null) {
+  if (savedCookie != null) {
     streaming.setAuth(YtMusicAuth(
       cookie: savedCookie,
       visitorData: settings.value.ytMusicVisitorData,
@@ -290,6 +236,10 @@ Future<void> main() async {
     network: network,
     downloads: downloads,
   );
+  // Restaurar la cola de la sesión anterior (sin reproducir): el mini
+  // player aparece con la última canción lista y el primer play retoma
+  // donde ibas. Fire-and-forget — no bloquea el arranque.
+  unawaited(playback.restoreSession());
 
   // Mini reproductor flotante (Dynamic Island estilo). Construido eager
   // para poder arrancarlo automáticamente si el setting venía activado
@@ -370,6 +320,15 @@ Future<void> main() async {
 
   // Empaquetamos el árbol en una variable para poder pasarlo a
   // `SentryFlutter.init` como `appRunner` sin duplicar el MultiProvider.
+  // Primer arranque: mostrar el onboarding solo si nunca se completó.
+  // Lectura best-effort — si prefs falla, entramos directo a Home.
+  var showOnboarding = false;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    showOnboarding =
+        !(prefs.getBool(OnboardingScreen.seenPrefsKey) ?? false);
+  } catch (_) {}
+
   final appRoot = MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: settings),
@@ -453,7 +412,7 @@ Future<void> main() async {
         ChangeNotifierProvider<EqualizerController>.value(value: equalizer),
         ChangeNotifierProvider<BitPerfectController>.value(value: bitPerfect),
       ],
-      child: const VibraApp(),
+      child: VibraApp(showOnboarding: showOnboarding),
     );
 
   // Sentry SOLO en release builds y SOLO si hay DSN inyectado en compile.

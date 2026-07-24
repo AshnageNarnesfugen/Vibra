@@ -9,6 +9,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/layout_tokens.dart';
 import 'core/theme/palette_signal.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'widgets/customized_background.dart';
 
 /// Composición raíz.
@@ -27,7 +28,12 @@ import 'widgets/customized_background.dart';
 /// comparten el mismo bg que se actualiza una sola vez cuando cambia la
 /// canción o los settings.
 class VibraApp extends StatelessWidget {
-  const VibraApp({super.key});
+  const VibraApp({super.key, this.showOnboarding = false});
+
+  /// Primer arranque → la ruta inicial es el onboarding (3 páginas).
+  /// El flag lo lee main() de prefs antes de runApp; al terminar el
+  /// onboarding se persiste y navega a HomeScreen con pushReplacement.
+  final bool showOnboarding;
 
   /// Último brightness empujado al SO. Evita spam del platform channel
   /// `setSystemUIOverlayStyle` en rebuilds donde el brightness no cambió.
@@ -141,7 +147,9 @@ class VibraApp extends StatelessWidget {
                   ),
                 );
               },
-              home: const HomeScreen(),
+              home: showOnboarding
+                  ? const OnboardingScreen()
+                  : const HomeScreen(),
             ),
           ),
         ],

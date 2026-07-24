@@ -61,45 +61,55 @@ jobs:
       - name: Decode release keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/vibra-release.jks"
 
-      # Build del APK release. El nombre de salida ya lo renombra el
-      # build.gradle.kts a Vibra-<versionName>.apk.
-      - name: Build release APK
+      # Build por ABI: 3 APKs de ~25MB en lugar del universal de 65MB —
+      # el usuario descarga solo el de su arquitectura (arm64-v8a para
+      # prácticamente cualquier teléfono de 2017+). El build.gradle.kts
+      # renombra cada uno a Vibra-<version>-<abi>.apk.
+      - name: Build release APKs (split por ABI)
         env:
           VIBRA_KEYSTORE_PATH: ${{ runner.temp }}/vibra-release.jks
           VIBRA_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           VIBRA_KEY_ALIAS: vibra
           VIBRA_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: flutter build apk --release
+        run: flutter build apk --release --split-per-abi
 
-      # Localiza el APK con nombre de marca. Fallback al app-release.apk
+      # Localiza los APKs con nombre de marca. Fallback a los app-*.apk
       # por si el rename fallara.
-      - name: Locate APK
+      - name: Locate APKs
         id: apk
         run: |
-          APK=$(find build/app/outputs/flutter-apk -name 'Vibra-*.apk' | head -n1)
-          if [ -z "$APK" ]; then
-            APK=$(find build/app/outputs/flutter-apk -name 'app-release.apk' | head -n1)
+          APKS=$(find build/app/outputs/flutter-apk -name 'Vibra-*.apk' | sort)
+          if [ -z "$APKS" ]; then
+            APKS=$(find build/app/outputs/flutter-apk -name 'app-*-release.apk' | sort)
           fi
-          echo "Encontrado: $APK"
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+          echo "Encontrados:"
+          echo "$APKS"
+          {
+            echo 'paths<<EOF'
+            echo "$APKS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK as build artifact
+      - name: Upload APKs as build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.apk.outputs.name }}
-          path: ${{ steps.apk.outputs.path }}
+          name: vibra-apks
+          path: build/app/outputs/flutter-apk/Vibra-*.apk
           if-no-files-found: error
 
       # Crea/actualiza el GitHub Release SOLO cuando el trigger fue un tag.
-      # softprops/action-gh-release adjunta el APK al release del tag.
+      # softprops/action-gh-release adjunta los APKs al release del tag.
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.path }}
+          files: ${{ steps.apk.outputs.paths }}
           name: Vibra ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          body: |
+            **¿Cuál APK descargo?** `arm64-v8a` para prácticamente
+            cualquier teléfono moderno (2017+). `armeabi-v7a` solo para
+            equipos viejos de 32 bits; `x86_64` para emuladores.
           generate_release_notes: true
           draft: false
           prerelease: false

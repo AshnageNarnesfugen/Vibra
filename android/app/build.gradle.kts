@@ -129,17 +129,24 @@ android {
                     "${layout.buildDirectory.get()}/outputs/flutter-apk"
                 )
                 if (!flutterApkDir.exists()) return@doLast
-                val legacy = file(
-                    "${flutterApkDir.path}/app-${variant.buildType.name}.apk"
-                )
-                if (!legacy.exists()) return@doLast
-                val branded = file(
-                    "${flutterApkDir.path}/Vibra-${versionName}" +
-                        "${if (variant.buildType.name == "release") "" else "-${variant.buildType.name}"}.apk"
-                )
-                if (branded.exists()) branded.delete()
-                legacy.copyTo(branded, overwrite = true)
-                println("Vibra: APK con nombre de marca → ${branded.name}")
+                val typeName = variant.buildType.name
+                val typeSuffix = if (typeName == "release") "" else "-$typeName"
+                // Cubre tanto el APK universal (app-release.apk) como los
+                // splits por ABI de `--split-per-abi`
+                // (app-arm64-v8a-release.apk, etc.) que usa el CI para
+                // publicar APKs de ~25MB en lugar del universal de 65MB.
+                val pattern = Regex("^app-(?:(.+)-)?$typeName\\.apk$")
+                flutterApkDir.listFiles()?.forEach { f ->
+                    val m = pattern.find(f.name) ?: return@forEach
+                    val abi = m.groupValues[1]
+                        .let { if (it.isEmpty()) "" else "-$it" }
+                    val branded = file(
+                        "${flutterApkDir.path}/Vibra-${versionName}$typeSuffix$abi.apk"
+                    )
+                    if (branded.exists()) branded.delete()
+                    f.copyTo(branded, overwrite = true)
+                    println("Vibra: APK con nombre de marca → ${branded.name}")
+                }
             }
         }
     }
