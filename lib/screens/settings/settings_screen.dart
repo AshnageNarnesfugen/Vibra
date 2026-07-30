@@ -5,6 +5,7 @@ import '../../core/animations/page_transitions.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/settings/ui_settings.dart';
 import '../../core/theme/layout_tokens.dart';
+import '../../l10n/app_localizations.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/large_title_scaffold.dart';
 import '../../widgets/stable_backdrop_group.dart';
@@ -15,6 +16,7 @@ import 'effects_settings_screen.dart';
 import 'equalizer_screen.dart';
 import 'floating_mini_settings_screen.dart';
 import 'hifi_settings_screen.dart';
+import 'language_settings_screen.dart';
 import 'quality_settings_screen.dart';
 import 'spacing_settings_screen.dart';
 import 'storage_settings_screen.dart';
@@ -28,6 +30,7 @@ class SettingsScreen extends StatelessWidget {
     final tokens = LayoutTokensScope.of(context);
     final settings = UiSettingsScope.of(context);
     final ctrl = context.read<SettingsController>();
+    final t = AppLocalizations.of(context);
 
     // Sesión activa = SOLO cookie. Los tokens OAuth están guardados pero
     // Google los rechaza desde finales de 2024 — no cuentan como sesión
@@ -39,12 +42,12 @@ class SettingsScreen extends StatelessWidget {
             settings.ytMusicRefreshToken != null);
     final entries = <_Entry>[
       _Entry(
-        title: 'Cuenta de YouTube Music',
+        title: t.settingsAccountTitle,
         subtitle: hasSession
-            ? 'Sesión activa — biblioteca personal habilitada'
+            ? t.settingsAccountActive
             : hasOauthOnly
-                ? 'OAuth guardado pero limitado por Google — usá cookie'
-                : 'Sin sesión — solo búsqueda pública',
+                ? t.settingsAccountOauthLimited
+                : t.settingsAccountNone,
         icon: hasSession
             ? Icons.verified_user_rounded
             : hasOauthOnly
@@ -53,67 +56,68 @@ class SettingsScreen extends StatelessWidget {
         builder: () => const LoginScreen(),
       ),
       _Entry(
-        title: 'Fondo',
-        subtitle: 'Color sólido o imagen ajustable, opacidad',
+        title: t.settingsBackgroundTitle,
+        subtitle: t.settingsBackgroundSubtitle,
         icon: Icons.wallpaper_rounded,
         builder: () => const BackgroundSettingsScreen(),
       ),
       _Entry(
-        title: 'Efectos',
-        subtitle: 'Blur, ruido y parallax al inclinar el dispositivo',
+        title: t.settingsEffectsTitle,
+        subtitle: t.settingsEffectsSubtitle,
         icon: Icons.blur_on_rounded,
         builder: () => const EffectsSettingsScreen(),
       ),
       _Entry(
-        title: 'Tema y color',
-        subtitle: 'Color dinámico desde la portada o acento por defecto',
+        title: t.settingsThemeTitle,
+        subtitle: t.settingsThemeSubtitle,
         icon: Icons.palette_rounded,
         builder: () => const ThemeSettingsScreen(),
       ),
       _Entry(
-        title: 'Espaciado y bordes',
-        subtitle: 'Densidad y radio uniforme',
+        title: t.settingsSpacingTitle,
+        subtitle: t.settingsSpacingSubtitle,
         icon: Icons.grid_view_rounded,
         builder: () => const SpacingSettingsScreen(),
       ),
       _Entry(
-        title: 'Animaciones',
-        subtitle: 'Estilo y duración de las transiciones',
+        title: t.settingsAnimationsTitle,
+        subtitle: t.settingsAnimationsSubtitle,
         icon: Icons.animation_rounded,
         builder: () => const AnimationSettingsScreen(),
       ),
       _Entry(
-        title: 'Calidad de audio y video',
-        subtitle:
-            'Bitrate diferente en WiFi vs datos móviles; calidad de descargas',
+        title: t.settingsQualityTitle,
+        subtitle: t.settingsQualitySubtitle,
         icon: Icons.high_quality_rounded,
         builder: () => const QualitySettingsScreen(),
       ),
       _Entry(
-        title: 'Almacenamiento',
-        subtitle:
-            'Dónde vive la música descargada y las carpetas de la app',
+        title: t.settingsStorageTitle,
+        subtitle: t.settingsStorageSubtitle,
         icon: Icons.folder_special_rounded,
         builder: () => const StorageSettingsScreen(),
       ),
       _Entry(
-        title: 'Ecualizador',
-        subtitle:
-            'Bandas + preamp + presets (Rock, Bass Boost, V-Shape…) y mezclas propias',
+        title: t.settingsEqTitle,
+        subtitle: t.settingsEqSubtitle,
         icon: Icons.equalizer_rounded,
         builder: () => const EqualizerScreen(),
       ),
       _Entry(
-        title: 'Modo Hi-Fi (bit-perfect)',
-        subtitle:
-            'Desactiva EQ, fades y procesado; monitor de output device y capability AAudio',
+        title: t.settingsHifiTitle,
+        subtitle: t.settingsHifiSubtitle,
         icon: Icons.graphic_eq_rounded,
         builder: () => const HiFiSettingsScreen(),
       ),
       _Entry(
-        title: 'Mini flotante',
-        subtitle: 'Widget pill sobre el sistema con cover + controles '
-            '(experimental, solo Android)',
+        title: t.settingsLanguageTitle,
+        subtitle: t.settingsLanguageSubtitle,
+        icon: Icons.translate_rounded,
+        builder: () => const LanguageSettingsScreen(),
+      ),
+      _Entry(
+        title: t.settingsFloatingTitle,
+        subtitle: t.settingsFloatingSubtitle,
         icon: Icons.picture_in_picture_alt_rounded,
         builder: () => const FloatingMiniSettingsScreen(),
       ),
@@ -121,7 +125,7 @@ class SettingsScreen extends StatelessWidget {
 
     return StableBackdropGroup(
       child: LargeTitleScaffold.body(
-      title: 'Ajustes',
+      title: t.settingsTitle,
       // 200px (antes 160) — el mini-player + nav ocupan ~150-160 y con
       // 160 el botón "Restablecer ajustes" del final del scroll quedaba
       // tapado por el mini-player.
@@ -175,17 +179,17 @@ class SettingsScreen extends StatelessWidget {
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (_) => AlertDialog(
-                    title: const Text('Restablecer'),
+                    title: Text(t.settingsReset),
                     content: const Text(
                         '¿Restaurar todos los ajustes a sus valores por defecto?'),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancelar'),
+                        child: Text(t.cancel),
                       ),
                       FilledButton(
                         onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Restablecer'),
+                        child: Text(t.settingsReset),
                       ),
                     ],
                   ),
@@ -193,7 +197,7 @@ class SettingsScreen extends StatelessWidget {
                 if (ok == true) ctrl.resetDefaults();
               },
               icon: const Icon(Icons.restart_alt_rounded),
-              label: const Text('Restablecer ajustes'),
+              label: Text(t.settingsReset),
             ),
           ],
         ),

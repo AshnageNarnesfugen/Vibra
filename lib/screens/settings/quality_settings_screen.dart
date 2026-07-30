@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/settings/settings_controller.dart';
 import '../../core/settings/ui_settings.dart';
 import '../../core/theme/layout_tokens.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/network_quality_resolver.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/stable_backdrop_group.dart';
@@ -21,58 +22,64 @@ class QualitySettingsScreen extends StatelessWidget {
     final ctrl = context.watch<SettingsController>();
     final s = ctrl.value;
     final tokens = LayoutTokensScope.of(context);
+    final t = AppLocalizations.of(context);
+    String audioLabel(MediaQuality q) => switch (q) {
+          MediaQuality.low => t.qualityAudioLow,
+          MediaQuality.medium => t.qualityAudioMedium,
+          MediaQuality.high => t.qualityAudioHigh,
+        };
+    String videoLabel(MediaQuality q) => switch (q) {
+          MediaQuality.low => t.qualityVideoLow,
+          MediaQuality.medium => t.qualityVideoMedium,
+          MediaQuality.high => t.qualityVideoHigh,
+        };
 
     return StableBackdropGroup(
       child: Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('Calidad de audio y video')),
+      appBar: AppBar(title: Text(t.settingsQualityTitle)),
       body: ListView(
         padding: tokens.pagePadding(),
         children: [
           _Section(
-            title: 'Audio en WiFi',
+            title: t.qualityAudioWifi,
+            labelOf: audioLabel,
             value: s.audioQualityWifi,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(audioQualityWifi: v)),
           ),
           SizedBox(height: tokens.gap),
           _Section(
-            title: 'Audio en datos móviles',
-            subtitle:
-                'Por defecto media para no quemar el plan. Sube a alta '
-                'si tienes datos ilimitados.',
+            title: t.qualityAudioCellular,
+            labelOf: audioLabel,
+            subtitle: t.qualityAudioCellularSubtitle,
             value: s.audioQualityCellular,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(audioQualityCellular: v)),
           ),
           SizedBox(height: tokens.gap),
           _Section(
-            title: 'Video en WiFi',
-            subtitle:
-                'Resolución de imagen del music video. El cambio aplica '
-                'al siguiente video que cargue.',
+            title: t.qualityVideoWifi,
+            subtitle: t.qualityVideoWifiSubtitle,
             value: s.videoQualityWifi,
-            labelOf: (q) => q.videoLabel,
+            labelOf: videoLabel,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(videoQualityWifi: v)),
           ),
           SizedBox(height: tokens.gap),
           _Section(
-            title: 'Video en datos móviles',
-            subtitle:
-                'Default baja — 5 minutos de music video en 720p+ '
-                'consumen ~100MB.',
+            title: t.qualityVideoCellular,
+            subtitle: t.qualityVideoCellularSubtitle,
             value: s.videoQualityCellular,
-            labelOf: (q) => q.videoLabel,
+            labelOf: videoLabel,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(videoQualityCellular: v)),
           ),
           SizedBox(height: tokens.gap),
           _Section(
-            title: 'Calidad de descargas',
-            subtitle:
-                'Se aplica a las canciones descargadas para reproducir '
-                'offline. Los archivos quedan en el dispositivo.',
+            title: t.qualityDownloads,
+            labelOf: audioLabel,
+            subtitle: t.qualityDownloadsSubtitle,
             value: s.downloadQuality,
             onChanged: (v) =>
                 ctrl.update((p) => p.copyWith(downloadQuality: v)),
@@ -81,12 +88,8 @@ class QualitySettingsScreen extends StatelessWidget {
           GlassCard(
             child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Autoplay al acabar la cola'),
-              subtitle: const Text(
-                'Cuando la cola de streaming termina (sin repetir), sigue '
-                'con canciones relacionadas a la última — como YT Music. '
-                'Apágalo si prefieres que la música pare al terminar.',
-              ),
+              title: Text(t.autoplayTitle),
+              subtitle: Text(t.autoplaySubtitle),
               value: s.autoplayRelated,
               onChanged: (v) =>
                   ctrl.update((p) => p.copyWith(autoplayRelated: v)),
@@ -96,15 +99,8 @@ class QualitySettingsScreen extends StatelessWidget {
           GlassCard(
             child: SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Descargar como MP3'),
-              subtitle: const Text(
-                'Convierte la descarga a MP3 256 kbps con metadata '
-                'incrustada (título, artista, álbum y carátula) — máxima '
-                'compatibilidad con otras apps y dispositivos. La '
-                'conversión tarda ~1-2 min por canción. Desactivado: se '
-                'guarda el stream original (m4a/opus), más rápido y sin '
-                're-compresión.',
-              ),
+              title: Text(t.downloadAsMp3Title),
+              subtitle: Text(t.downloadAsMp3Subtitle),
               value: s.downloadAsMp3,
               onChanged: (v) =>
                   ctrl.update((p) => p.copyWith(downloadAsMp3: v)),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme/layout_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/glass_card.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
@@ -71,6 +72,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     final tokens = LayoutTokensScope.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final t = AppLocalizations.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -84,7 +86,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 padding: const EdgeInsets.only(top: 4, right: 8),
                 child: TextButton(
                   onPressed: _finish,
-                  child: const Text('Saltar'),
+                  child: Text(t.onboardSkip),
                 ),
               ),
             ),
@@ -92,35 +94,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: PageView(
                 controller: _pageCtrl,
                 onPageChanged: (i) => setState(() => _page = i),
-                children: const [
+                children: [
                   _OnboardPage(
                     asset: 'assets/branding/symbol/vibra-symbol-white.png',
                     icon: null,
-                    title: 'Bienvenido a Vibra',
-                    body: 'Tu música local y el catálogo de YouTube Music '
-                        'en un solo reproductor, con una interfaz que se '
-                        'tiñe con los colores de cada portada. Fondos, '
-                        'formas y animaciones: todo se puede personalizar '
-                        'en Ajustes.',
+                    title: t.onboardWelcomeTitle,
+                    body: t.onboardWelcomeBody,
                   ),
                   _OnboardPage(
                     icon: Icons.library_music_rounded,
-                    title: 'Biblioteca y descargas',
-                    body: 'Vibra escanea la música de tu dispositivo y la '
-                        'agrupa por álbumes y artistas. Las canciones de '
-                        'streaming se pueden descargar (menú ⋮ → '
-                        'Descargar) y quedan como MP3 con carátula en una '
-                        'carpeta pública — visibles desde el explorador '
-                        'de archivos y otras apps.',
+                    title: t.onboardLibraryTitle,
+                    body: t.onboardLibraryBody,
                   ),
                   _OnboardPage(
                     icon: Icons.account_circle_rounded,
-                    title: 'Tu cuenta (opcional)',
-                    body: 'Sin cuenta puedes buscar y reproducir todo el '
-                        'catálogo. Iniciando sesión con Google además '
-                        'tienes tu biblioteca personal: tus playlists, '
-                        'gustadas, historial y recomendaciones a tu '
-                        'medida.',
+                    title: t.onboardAccountTitle,
+                    body: t.onboardAccountBody,
                   ),
                 ],
               ),
@@ -156,7 +145,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       child: FilledButton.icon(
                         onPressed: _login,
                         icon: const Icon(Icons.login_rounded),
-                        label: const Text('Iniciar sesión con Google'),
+                        label: Text(t.onboardSignIn),
                       ),
                     ),
                     SizedBox(height: tokens.gapSm),
@@ -164,7 +153,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       width: double.infinity,
                       child: OutlinedButton(
                         onPressed: _finish,
-                        child: const Text('Explorar sin cuenta'),
+                        child: Text(t.onboardExplore),
                       ),
                     ),
                   ] else
@@ -172,7 +161,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: _next,
-                        child: const Text('Siguiente'),
+                        child: Text(t.onboardNext),
                       ),
                     ),
                 ],

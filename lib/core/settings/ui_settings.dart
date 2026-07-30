@@ -207,6 +207,7 @@ class UiSettings {
     this.downloadQuality = MediaQuality.high,
     this.downloadAsMp3 = true,
     this.autoplayRelated = true,
+    this.appLanguageCode,
     this.floatingMiniEnabled = false,
     this.fadeOnPlayPauseEnabled = false,
     this.fadeDurationMs = 350,
@@ -334,6 +335,10 @@ class UiSettings {
   /// parar en silencio, sigue con recomendaciones relacionadas a la
   /// última canción — como hace YT Music. Default ON.
   final bool autoplayRelated;
+
+  /// Idioma forzado de la app ('es', 'en'). `null` = seguir el idioma
+  /// del sistema (default). Se elige en Ajustes → Idioma.
+  final String? appLanguageCode;
 
   /// Mini reproductor flotante (Dynamic Island estilo) sobre el sistema.
   /// Solo Android. Requiere permiso `SYSTEM_ALERT_WINDOW` que el usuario
@@ -536,6 +541,8 @@ class UiSettings {
     MediaQuality? downloadQuality,
     bool? downloadAsMp3,
     bool? autoplayRelated,
+    String? appLanguageCode,
+    bool clearAppLanguageCode = false,
     bool? floatingMiniEnabled,
     bool? fadeOnPlayPauseEnabled,
     int? fadeDurationMs,
@@ -605,6 +612,9 @@ class UiSettings {
       downloadQuality: downloadQuality ?? this.downloadQuality,
       downloadAsMp3: downloadAsMp3 ?? this.downloadAsMp3,
       autoplayRelated: autoplayRelated ?? this.autoplayRelated,
+      appLanguageCode: clearAppLanguageCode
+          ? null
+          : (appLanguageCode ?? this.appLanguageCode),
       floatingMiniEnabled: floatingMiniEnabled ?? this.floatingMiniEnabled,
       fadeOnPlayPauseEnabled:
           fadeOnPlayPauseEnabled ?? this.fadeOnPlayPauseEnabled,
@@ -697,6 +707,7 @@ class UiSettings {
         'downloadQuality': downloadQuality.name,
         'downloadAsMp3': downloadAsMp3,
         'autoplayRelated': autoplayRelated,
+        'appLanguageCode': appLanguageCode,
         'floatingMiniEnabled': floatingMiniEnabled,
         'fadeOnPlayPauseEnabled': fadeOnPlayPauseEnabled,
         'fadeDurationMs': fadeDurationMs,
@@ -784,6 +795,7 @@ class UiSettings {
       ),
       downloadAsMp3: m['downloadAsMp3'] as bool? ?? true,
       autoplayRelated: m['autoplayRelated'] as bool? ?? true,
+      appLanguageCode: m['appLanguageCode'] as String?,
       floatingMiniEnabled: m['floatingMiniEnabled'] as bool? ?? false,
       fadeOnPlayPauseEnabled:
           m['fadeOnPlayPauseEnabled'] as bool? ?? false,

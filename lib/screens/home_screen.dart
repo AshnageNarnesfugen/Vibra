@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/animations/page_transitions.dart';
+import '../l10n/app_localizations.dart';
 import '../core/settings/ui_settings.dart';
 import '../widgets/adaptive_color.dart';
 import '../widgets/mini_player.dart';
@@ -373,21 +374,23 @@ class _FrostedBottomBar extends StatelessWidget {
                         onDestinationSelected: onChange,
                         labelBehavior:
                             NavigationDestinationLabelBehavior.alwaysShow,
-                        destinations: const [
+                        destinations: [
                           NavigationDestination(
-                            icon: Icon(Icons.home_outlined),
-                            selectedIcon: Icon(Icons.home_rounded),
-                            label: 'Inicio',
+                            icon: const Icon(Icons.home_outlined),
+                            selectedIcon: const Icon(Icons.home_rounded),
+                            label: AppLocalizations.of(context).homeTab,
                           ),
                           NavigationDestination(
-                            icon: Icon(Icons.library_music_outlined),
-                            selectedIcon: Icon(Icons.library_music_rounded),
-                            label: 'Biblioteca',
+                            icon: const Icon(Icons.library_music_outlined),
+                            selectedIcon:
+                                const Icon(Icons.library_music_rounded),
+                            label: AppLocalizations.of(context).libraryTab,
                           ),
                           NavigationDestination(
-                            icon: Icon(Icons.tune_outlined),
-                            selectedIcon: Icon(Icons.tune_rounded),
-                            label: 'Ajustes',
+                            icon: const Icon(Icons.tune_outlined),
+                            selectedIcon: const Icon(Icons.tune_rounded),
+                            label:
+                                AppLocalizations.of(context).settingsTitle,
                           ),
                         ],
                       ),
@@ -465,7 +468,7 @@ class _SideMenuDrawer extends StatelessWidget {
             _DrawerTile(
               icon: Icons.home_outlined,
               selectedIcon: Icons.home_rounded,
-              label: 'Inicio',
+              label: AppLocalizations.of(context).homeTab,
               selected: index == 0,
               onTap: () {
                 onSelect(0);
@@ -475,7 +478,7 @@ class _SideMenuDrawer extends StatelessWidget {
             _DrawerTile(
               icon: Icons.library_music_outlined,
               selectedIcon: Icons.library_music_rounded,
-              label: 'Biblioteca',
+              label: AppLocalizations.of(context).libraryTab,
               selected: index == 1,
               onTap: () {
                 onSelect(1);
@@ -485,7 +488,7 @@ class _SideMenuDrawer extends StatelessWidget {
             _DrawerTile(
               icon: Icons.tune_outlined,
               selectedIcon: Icons.tune_rounded,
-              label: 'Ajustes',
+              label: AppLocalizations.of(context).settingsTitle,
               selected: index == 2,
               onTap: () {
                 onSelect(2);

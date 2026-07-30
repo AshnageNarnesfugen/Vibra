@@ -1,7 +1,7 @@
 name: vibra
 description: "Reproductor de música con personalización profunda de la UI."
 publish_to: 'none'
-version: 1.5.0+24
+version: 1.6.0+25
 
 environment:
   sdk: ^3.11.5
@@ -9,6 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Localización: la app sigue el idioma del sistema (es/en) con override
+  # manual en Ajustes → Idioma. Strings en lib/l10n/*.arb (gen_l10n).
+  flutter_localizations:
+    sdk: flutter
+  intl: any
   cupertino_icons: ^1.0.8
 
   # Estado
@@ -117,6 +122,7 @@ flutter_native_splash:
 
 flutter:
   uses-material-design: true
+  generate: true
   shaders:
     - assets/shaders/aurora.frag
     - assets/shaders/plasma.frag

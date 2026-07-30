@@ -8,6 +8,7 @@ import 'core/settings/ui_settings.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/layout_tokens.dart';
 import 'core/theme/palette_signal.dart';
+import 'l10n/app_localizations.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'widgets/customized_background.dart';
@@ -119,6 +120,13 @@ class VibraApp extends StatelessWidget {
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
               title: 'Vibra',
+              // Idioma: sigue al sistema salvo override manual en
+              // Ajustes → Idioma (appLanguageCode: 'es'/'en'/null).
+              locale: settings.appLanguageCode == null
+                  ? null
+                  : Locale(settings.appLanguageCode!),
+              supportedLocales: AppLocalizations.supportedLocales,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
               theme: theme,
               darkTheme: theme,
               themeMode: effectiveBrightness == Brightness.dark
@@ -129,6 +137,15 @@ class VibraApp extends StatelessWidget {
                 // MaterialApp viven en su propio sub-árbol — no heredan los
                 // del Stack sibling. Es cheap (StatelessWidgets que solo
                 // propagan una referencia inmutable).
+                final mq = MediaQuery.of(context);
+                // Escala de fuente del sistema ACOTADA: la accesibilidad
+                // se respeta (el texto sí escala y los layouts intrínsecos
+                // crecen con él), pero con piso 0.85× y tope 1.45×. Más
+                // allá del tope, los layouts densos (chips, tiles, mini
+                // player, transport) truncan en vez de ayudar — es el
+                // mismo enfoque que usan Spotify y YT Music.
+                final scaler = mq.textScaler
+                    .clamp(minScaleFactor: 0.85, maxScaleFactor: 1.45);
                 return AnnotatedRegion<SystemUiOverlayStyle>(
                   value: SystemUiOverlayStyle(
                     statusBarColor: Colors.transparent,
@@ -138,11 +155,14 @@ class VibraApp extends StatelessWidget {
                             ? Brightness.light
                             : Brightness.dark,
                   ),
-                  child: LayoutTokensScope(
-                    tokens: LayoutTokens.fromSettings(settings),
-                    child: UiSettingsScope(
-                      settings: settings,
-                      child: child ?? const SizedBox.shrink(),
+                  child: MediaQuery(
+                    data: mq.copyWith(textScaler: scaler),
+                    child: LayoutTokensScope(
+                      tokens: LayoutTokens.fromSettings(settings),
+                      child: UiSettingsScope(
+                        settings: settings,
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 );

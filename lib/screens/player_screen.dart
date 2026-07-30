@@ -8,6 +8,7 @@ import '../core/settings/settings_controller.dart';
 import '../core/settings/ui_settings.dart';
 import '../core/theme/contrast.dart';
 import '../core/theme/layout_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../widgets/adaptive_color.dart';
 import '../widgets/marquee_text.dart';
 import '../models/song.dart';
@@ -108,7 +109,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(),
-        body: const Center(child: Text('Nada en reproducción.')),
+        body: Center(child: Text(AppLocalizations.of(context).nothingPlaying)),
       );
     }
 
@@ -116,6 +117,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         MediaQuery.sizeOf(context).width >= PlayerScreen._kSplitThreshold;
 
     final lyrics = context.watch<LyricsController>();
+    final t = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: Colors.transparent,
       // En portrait el cover en modo expanded se extiende DETRÁS del AppBar
@@ -143,7 +145,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
         title: AdaptiveColor(
           builder: (context, color) => Text(
-            'Reproduciendo',
+            t.nowPlaying,
             style: TextStyle(
               color: color,
               fontSize: 17,
@@ -161,7 +163,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               builder: (context, color) => AnimatedBuilder(
                 animation: _queueAnim,
                 builder: (context, _) => IconButton(
-                  tooltip: _queueAnim.value > 0.5 ? 'Ocultar cola' : 'Ver cola',
+                  tooltip: _queueAnim.value > 0.5
+                      ? t.tooltipHideQueue
+                      : t.tooltipShowQueue,
                   onPressed: _toggleQueue,
                   icon: Transform.rotate(
                     angle: _queueAnim.value * math.pi,
@@ -187,7 +191,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 final showVideo = availability.showAsCover;
                 return AdaptiveColor(
                   builder: (context, color) => IconButton(
-                    tooltip: showVideo ? 'Ver carátula' : 'Ver video',
+                    tooltip:
+                        showVideo ? t.tooltipShowCover : t.tooltipShowVideo,
                     onPressed: () =>
                         availability.setShowAsCover(!showVideo),
                     icon: Icon(
@@ -219,7 +224,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               }
               return AdaptiveColor(
                 builder: (context, color) => IconButton(
-                  tooltip: 'Cambiar color',
+                  tooltip: t.tooltipChangeColor,
                   onPressed: () => PalettePickerSheet.show(context),
                   icon: Icon(Icons.palette_rounded, color: color),
                 ),
@@ -228,7 +233,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
           AdaptiveColor(
             builder: (context, color) => IconButton(
-              tooltip: lyrics.showLyrics ? 'Ocultar letra' : 'Ver letra',
+              tooltip: lyrics.showLyrics
+                  ? t.tooltipHideLyrics
+                  : t.tooltipShowLyrics,
               onPressed: lyrics.toggleShowLyrics,
               icon: Icon(
                 lyrics.showLyrics
@@ -275,7 +282,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           // descargar, ir al álbum/artista, reproducir a continuación…).
           AdaptiveColor(
             builder: (context, color) => IconButton(
-              tooltip: 'Más opciones',
+              tooltip: t.tooltipMoreOptions,
               onPressed: () =>
                   showSongContextSheet(context, songs: [song]),
               icon: Icon(Icons.more_vert_rounded, color: color),

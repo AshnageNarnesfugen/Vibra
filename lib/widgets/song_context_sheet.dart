@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/animations/page_transitions.dart';
 import '../core/settings/ui_settings.dart';
 import '../core/theme/layout_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../models/song.dart';
 import '../providers/playback_controller.dart';
 import '../screens/album_screen.dart';
@@ -66,6 +67,7 @@ class _SongContextSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = LayoutTokensScope.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final t = AppLocalizations.of(context);
     final displayTitle = title ?? (_single ? _first.title : 'Selección');
     final displaySubtitle = subtitle ??
         (_single
@@ -148,12 +150,12 @@ class _SongContextSheet extends StatelessWidget {
             // ---- Acciones ----
             _Action(
               icon: Icons.play_arrow_rounded,
-              label: 'Reproducir',
+              label: t.actionPlay,
               onTap: () => _playAll(context, shuffle: false),
             ),
             _Action(
               icon: Icons.shuffle_rounded,
-              label: 'Reproducir aleatorio',
+              label: t.actionShuffle,
               onTap: () => _playAll(context, shuffle: true),
             ),
             if (_single && _hasActiveQueue(context))
@@ -163,17 +165,17 @@ class _SongContextSheet extends StatelessWidget {
               // final" cuando quieres priorizar una canción.
               _Action(
                 icon: Icons.playlist_play_rounded,
-                label: 'Reproducir a continuación',
+                label: t.actionPlayNext,
                 onTap: () => _playNext(context),
               ),
               _Action(
                 icon: Icons.queue_music_rounded,
-                label: 'Añadir a la cola actual',
+                label: t.actionAddToQueue,
                 onTap: () => _addToQueue(context),
               ),
             _Action(
               icon: Icons.playlist_add_rounded,
-              label: 'Guardar en playlist',
+              label: t.actionSaveToPlaylist,
               onTap: () async {
                 Navigator.of(context).pop();
                 await showSaveToPlaylistSheet(context, songs: songs);
@@ -185,13 +187,13 @@ class _SongContextSheet extends StatelessWidget {
             if (_single && _first.artistBrowseId != null)
               _Action(
                 icon: Icons.person_rounded,
-                label: 'Ir al artista',
+                label: t.actionGoToArtist,
                 onTap: () => _gotoArtist(context, _first.artistBrowseId!),
               ),
             if (_single && _first.albumBrowseId != null)
               _Action(
                 icon: Icons.album_rounded,
-                label: 'Ir al álbum',
+                label: t.actionGoToAlbum,
                 onTap: () => _gotoAlbum(
                   context,
                   _first.albumBrowseId!,
@@ -250,6 +252,7 @@ class _SongContextSheet extends StatelessWidget {
   /// llamaba `playAt` y cortaba un fragmento del audio — el nuevo
   /// `addToCurrentQueue` solo muta la lista sin tocar el player.
   void _addToQueue(BuildContext context) {
+    final t = AppLocalizations.of(context);
     final pb = context.read<PlaybackController>();
     final messenger = ScaffoldMessenger.of(context);
     for (final song in songs) {
@@ -258,9 +261,7 @@ class _SongContextSheet extends StatelessWidget {
     }
     Navigator.of(context).pop();
     messenger.showSnackBar(SnackBar(
-      content: Text(
-          'Añadidas ${songs.length} canción${songs.length == 1 ? '' : 'es'} '
-          'al final de la cola.'),
+      content: Text(t.snackAddedToQueue(songs.length)),
       duration: const Duration(seconds: 2),
     ));
   }
@@ -300,12 +301,13 @@ class _SongContextSheet extends StatelessWidget {
   /// Acción "Descargar" / "Quitar descarga". Cambia el label y el icono
   /// según el estado actual del DownloadService.
   Widget _buildDownloadAction(BuildContext context) {
+    final t = AppLocalizations.of(context);
     final service = context.watch<DownloadService?>();
     if (service == null) {
       // El service falló al inicializar — exponer "no disponible".
-      return const _Action(
+      return _Action(
         icon: Icons.cloud_off_rounded,
-        label: 'Descargas no disponibles',
+        label: t.actionDownloadsUnavailable,
         onTap: _noop,
       );
     }
@@ -317,7 +319,7 @@ class _SongContextSheet extends StatelessWidget {
     if (allDownloaded) {
       return _Action(
         icon: Icons.download_done_rounded,
-        label: _single ? 'Quitar descarga' : 'Quitar descargas',
+        label: _single ? t.actionRemoveDownload : t.actionRemoveDownloads,
         onTap: () => _deleteDownloads(context, service, streamable),
       );
     }
@@ -331,8 +333,8 @@ class _SongContextSheet extends StatelessWidget {
           ? Icons.downloading_rounded
           : Icons.download_rounded,
       label: anyQueued
-          ? 'En cola…'
-          : (_single ? 'Descargar para offline' : 'Descargar todas'),
+          ? t.actionInQueue
+          : (_single ? t.actionDownload : t.actionDownloadAll),
       onTap: anyQueued
           ? _noop
           : () => _startDownloads(context, service, streamable),
@@ -343,11 +345,11 @@ class _SongContextSheet extends StatelessWidget {
 
   void _startDownloads(
       BuildContext context, DownloadService service, List<Song> targets) {
+    final t = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
     messenger.showSnackBar(SnackBar(
-      content: Text(
-          'Descargando ${targets.length} canción${targets.length == 1 ? '' : 'es'}…'),
+      content: Text(t.snackDownloading(targets.length)),
       duration: const Duration(seconds: 2),
     ));
     // Fire-and-forget en paralelo; el service notifica progreso vía
@@ -362,14 +364,14 @@ class _SongContextSheet extends StatelessWidget {
 
   Future<void> _deleteDownloads(
       BuildContext context, DownloadService service, List<Song> targets) async {
+    final t = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
     for (final s in targets) {
       await service.delete(s.id);
     }
     messenger.showSnackBar(SnackBar(
-      content: Text('${targets.length} descarga${targets.length == 1 ? '' : 's'} '
-          'eliminada${targets.length == 1 ? '' : 's'}.'),
+      content: Text(t.snackDeletedDownloads(targets.length)),
       duration: const Duration(seconds: 2),
     ));
   }

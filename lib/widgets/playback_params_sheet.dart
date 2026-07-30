@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/theme/layout_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/playback_controller.dart';
 import 'glass_card.dart';
 
@@ -34,6 +35,7 @@ class _PlaybackParamsSheet extends StatelessWidget {
     final s = ctrl.value;
     final tokens = LayoutTokensScope.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final t = AppLocalizations.of(context);
 
     final isNeutral = s.playbackSpeed == 1.0 && s.playbackPitchSemitones == 0.0;
 
@@ -55,7 +57,7 @@ class _PlaybackParamsSheet extends StatelessWidget {
                   Icon(Icons.speed_rounded,
                       size: 22, color: scheme.primary),
                   SizedBox(width: tokens.gapSm),
-                  Text('Velocidad y tono',
+                  Text(t.speedPitchTitle,
                       style: Theme.of(context).textTheme.titleMedium),
                   const Spacer(),
                   if (!isNeutral)
@@ -73,7 +75,7 @@ class _PlaybackParamsSheet extends StatelessWidget {
               // ─────────── Speed ───────────
               Row(
                 children: [
-                  Text('Velocidad',
+                  Text(t.speedLabel,
                       style: Theme.of(context).textTheme.titleSmall),
                   const Spacer(),
                   Text(_fmtSpeed(s.playbackSpeed),
@@ -115,7 +117,7 @@ class _PlaybackParamsSheet extends StatelessWidget {
               // ─────────── Pitch ───────────
               Row(
                 children: [
-                  Text('Tono (semitonos)',
+                  Text(t.pitchLabel,
                       style: Theme.of(context).textTheme.titleSmall),
                   const Spacer(),
                   Text(_fmtSemis(s.playbackPitchSemitones),
@@ -144,8 +146,7 @@ class _PlaybackParamsSheet extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.only(left: 12, bottom: tokens.gapSm),
                   child: Text(
-                    'Pitch bloqueado a velocidad — el slider de tono '
-                    'queda desactivado.',
+                    t.pitchLockedHint,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurface.withValues(alpha: 0.6),
                         ),
@@ -155,11 +156,8 @@ class _PlaybackParamsSheet extends StatelessWidget {
               // ─────────── Lock toggle ───────────
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Tono sigue a velocidad (chipmunk)'),
-                subtitle: const Text(
-                  'Subir velocidad sube el tono y viceversa, como una '
-                  'cinta vieja. Default: tono independiente.',
-                ),
+                title: Text(t.chipmunkTitle),
+                subtitle: Text(t.chipmunkSubtitle),
                 value: s.lockPitchToSpeed,
                 onChanged: (v) =>
                     ctrl.update((p) => p.copyWith(lockPitchToSpeed: v)),
@@ -241,15 +239,16 @@ class _SleepTimerSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final pb = context.watch<PlaybackController>();
     final tokens = LayoutTokensScope.of(context);
+    final t = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
 
     final deadline = pb.sleepDeadline;
     String? statusText;
     if (pb.sleepAtTrackEnd) {
-      statusText = 'Se pausará al terminar esta canción.';
+      statusText = t.sleepStatusTrackEnd;
     } else if (deadline != null) {
       final hhmm = TimeOfDay.fromDateTime(deadline).format(context);
-      statusText = 'Se pausará a las $hhmm.';
+      statusText = t.sleepStatusAt(hhmm);
     }
 
     return Column(
@@ -265,13 +264,13 @@ class _SleepTimerSection extends StatelessWidget {
                   : scheme.onSurface.withValues(alpha: 0.8),
             ),
             SizedBox(width: tokens.gapSm),
-            Text('Temporizador de apagado',
+            Text(t.sleepTimerTitle,
                 style: Theme.of(context).textTheme.titleSmall),
             const Spacer(),
             if (pb.sleepTimerActive)
               TextButton(
                 onPressed: pb.cancelSleepTimer,
-                child: const Text('Cancelar'),
+                child: Text(t.cancel),
               ),
           ],
         ),
@@ -292,12 +291,12 @@ class _SleepTimerSection extends StatelessWidget {
           children: [
             for (final min in const [15, 30, 45, 60])
               ActionChip(
-                label: Text('$min min'),
+                label: Text(t.sleepMinutes(min)),
                 onPressed: () =>
                     pb.startSleepTimer(Duration(minutes: min)),
               ),
             ActionChip(
-              label: const Text('Fin de canción'),
+              label: Text(t.sleepAtTrackEnd),
               onPressed: pb.setSleepAtTrackEnd,
             ),
           ],

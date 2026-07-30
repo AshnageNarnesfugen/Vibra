@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/layout_tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../models/song.dart';
 import '../services/download_service.dart';
 import '../widgets/glass_card.dart';
@@ -17,15 +18,16 @@ class DownloadsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = LayoutTokensScope.of(context);
+    final t = AppLocalizations.of(context);
     final dl = context.watch<DownloadService?>();
 
     if (dl == null) {
       return StableBackdropGroup(
         child: Scaffold(
           backgroundColor: Colors.transparent,
-          appBar: AppBar(title: const Text('Descargas')),
-          body: const Center(
-            child: Text('El servicio de descargas no está disponible.'),
+          appBar: AppBar(title: Text(t.downloadsTitle)),
+          body: Center(
+            child: Text(t.downloadsUnavailable),
           ),
         ),
       );
@@ -40,13 +42,13 @@ class DownloadsScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const Text('Descargas'),
+          title: Text(t.downloadsTitle),
           actions: [
             if (hasPending)
               TextButton.icon(
                 onPressed: () => dl.cancelAll(),
                 icon: const Icon(Icons.close_rounded, size: 18),
-                label: const Text('Cancelar todo'),
+                label: Text(t.downloadsCancelAll),
               ),
           ],
         ),
@@ -55,7 +57,7 @@ class DownloadsScreen extends StatelessWidget {
           children: [
             // ─────────── En curso + pendientes ───────────
             if (hasPending) ...[
-              _SectionLabel('En cola · ${dl.pendingCount}'),
+              _SectionLabel(t.downloadsQueuedHeader(dl.pendingCount)),
               SizedBox(height: tokens.gapSm),
               GlassCard(
                 padding: EdgeInsets.zero,
@@ -96,8 +98,8 @@ class DownloadsScreen extends StatelessWidget {
                     Icon(Icons.cloud_done_rounded,
                         color: Theme.of(context).colorScheme.primary),
                     SizedBox(width: tokens.gap),
-                    const Expanded(
-                      child: Text('No hay descargas en cola.'),
+                    Expanded(
+                      child: Text(t.downloadsEmptyQueue),
                     ),
                   ],
                 ),
@@ -106,13 +108,12 @@ class DownloadsScreen extends StatelessWidget {
             ],
 
             // ─────────── Completadas ───────────
-            _SectionLabel('Descargadas · ${done.length}'),
+            _SectionLabel(t.downloadsDoneHeader(done.length)),
             SizedBox(height: tokens.gapSm),
             if (done.isEmpty)
               GlassCard(
                 child: Text(
-                  'Todavía no descargaste ninguna canción. Usa "Descargar" '
-                  'en el menú de una canción de streaming.',
+                  t.downloadsEmptyDone,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               )
@@ -189,6 +190,7 @@ class _DownloadRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final t = AppLocalizations.of(context);
     // progress 0.99 = fase de transcode MP3 (el encode tarda). Lo
     // señalamos con texto en vez de dejar la barra "colgada" en 99%.
     final transcoding = isActive && progress != null && progress! >= 0.99;
@@ -236,7 +238,7 @@ class _DownloadRow extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         transcoding
-                            ? 'Convirtiendo…'
+                            ? t.downloadsConverting
                             : '${((progress ?? 0) * 100).round()}%',
                         style: TextStyle(
                           fontSize: 11,
@@ -248,7 +250,7 @@ class _DownloadRow extends StatelessWidget {
                   )
                 else
                   Text(
-                    'En espera · #${queuePosition ?? '?'}',
+                    t.downloadsWaiting('${queuePosition ?? '?'}'),
                     style: TextStyle(
                       fontSize: 11,
                       color: scheme.onSurface.withValues(alpha: 0.5),
@@ -259,7 +261,7 @@ class _DownloadRow extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.close_rounded),
-            tooltip: 'Cancelar',
+            tooltip: t.cancel,
             visualDensity: VisualDensity.compact,
             onPressed: onCancel,
           ),
@@ -278,6 +280,7 @@ class _DownloadedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final t = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
@@ -318,7 +321,7 @@ class _DownloadedRow extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline_rounded),
-            tooltip: 'Borrar descarga',
+            tooltip: t.downloadsDeleteTooltip,
             visualDensity: VisualDensity.compact,
             onPressed: onDelete,
           ),

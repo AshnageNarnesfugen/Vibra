@@ -1,0 +1,177 @@
+{
+  "@@locale": "en",
+
+  "homeTab": "Home",
+  "libraryTab": "Library",
+  "settingsTitle": "Settings",
+  "cancel": "Cancel",
+
+  "settingsAccountTitle": "YouTube Music account",
+  "settingsAccountActive": "Signed in — personal library enabled",
+  "settingsAccountOauthLimited": "OAuth saved but limited by Google — use a cookie",
+  "settingsAccountNone": "Not signed in — public search only",
+  "settingsBackgroundTitle": "Background",
+  "settingsBackgroundSubtitle": "Solid color or adjustable image, opacity",
+  "settingsEffectsTitle": "Effects",
+  "settingsEffectsSubtitle": "Blur, noise and tilt parallax",
+  "settingsThemeTitle": "Theme & color",
+  "settingsThemeSubtitle": "Dynamic color from the artwork or a default accent",
+  "settingsSpacingTitle": "Spacing & corners",
+  "settingsSpacingSubtitle": "Density and uniform corner radius",
+  "settingsAnimationsTitle": "Animations",
+  "settingsAnimationsSubtitle": "Transition style and duration",
+  "settingsQualityTitle": "Audio & video quality",
+  "settingsQualitySubtitle": "Different bitrate on WiFi vs mobile data; download quality",
+  "settingsStorageTitle": "Storage",
+  "settingsStorageSubtitle": "Where downloaded music lives and the app folders",
+  "settingsEqTitle": "Equalizer",
+  "settingsEqSubtitle": "Bands + preamp + presets (Rock, Bass Boost, V-Shape…) and custom mixes",
+  "settingsHifiTitle": "Hi-Fi mode (bit-perfect)",
+  "settingsHifiSubtitle": "Disables EQ, fades and processing; output device monitor and AAudio capability",
+  "settingsFloatingTitle": "Floating mini",
+  "settingsFloatingSubtitle": "System-overlay pill widget with cover + controls (experimental, Android only)",
+  "settingsLanguageTitle": "Language",
+  "settingsLanguageSubtitle": "Follows the system or set it manually",
+  "settingsReset": "Reset settings",
+
+  "languageSystem": "System",
+  "languageScreenHint": "By default Vibra uses your device language. Pick one here to override it for the app only.",
+
+  "qualityAudioWifi": "Audio on WiFi",
+  "qualityAudioCellular": "Audio on mobile data",
+  "qualityAudioCellularSubtitle": "Defaults to medium to save your data plan. Raise it to high if you have unlimited data.",
+  "qualityVideoWifi": "Video on WiFi",
+  "qualityVideoWifiSubtitle": "Music video image resolution. Changes apply to the next video that loads.",
+  "qualityVideoCellular": "Video on mobile data",
+  "qualityVideoCellularSubtitle": "Defaults to low — 5 minutes of 720p+ music video uses ~100MB.",
+  "qualityDownloads": "Download quality",
+  "qualityDownloadsSubtitle": "Applies to songs downloaded for offline playback. Files stay on your device.",
+  "qualityAudioLow": "Low (~96 kbps)",
+  "qualityAudioMedium": "Medium (~160 kbps)",
+  "qualityAudioHigh": "High",
+  "qualityVideoLow": "Low (360p)",
+  "qualityVideoMedium": "Medium (720p)",
+  "qualityVideoHigh": "High (best available)",
+  "autoplayTitle": "Autoplay when the queue ends",
+  "autoplaySubtitle": "When your streaming queue ends (repeat off), keep going with songs related to the last one — like YT Music. Turn it off if you prefer playback to stop.",
+  "downloadAsMp3Title": "Download as MP3",
+  "downloadAsMp3Subtitle": "Converts downloads to 256 kbps MP3 with embedded metadata (title, artist, album and cover art) — maximum compatibility with other apps and devices. Conversion takes ~1-2 min per song. Off: keeps the original stream (m4a/opus), faster and with no re-compression.",
+
+  "downloadsTitle": "Downloads",
+  "downloadsCancelAll": "Cancel all",
+  "downloadsQueuedHeader": "Queued · {count}",
+  "@downloadsQueuedHeader": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadsDoneHeader": "Downloaded · {count}",
+  "@downloadsDoneHeader": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadsEmptyQueue": "No downloads queued.",
+  "downloadsEmptyDone": "You haven't downloaded any songs yet. Use \"Download\" in a streaming song's menu.",
+  "downloadsConverting": "Converting…",
+  "downloadsWaiting": "Waiting · #{position}",
+  "@downloadsWaiting": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsUnavailable": "The download service is unavailable.",
+  "downloadsDeleteTooltip": "Delete download",
+
+  "actionPlay": "Play",
+  "actionShuffle": "Shuffle",
+  "actionPlayNext": "Play next",
+  "actionAddToQueue": "Add to current queue",
+  "actionSaveToPlaylist": "Save to playlist",
+  "actionDownload": "Download for offline",
+  "actionDownloadAll": "Download all",
+  "actionRemoveDownload": "Remove download",
+  "actionRemoveDownloads": "Remove downloads",
+  "actionInQueue": "Queued…",
+  "actionDownloadsUnavailable": "Downloads unavailable",
+  "actionGoToArtist": "Go to artist",
+  "actionGoToAlbum": "Go to album",
+  "snackDownloading": "{count, plural, =1{Downloading 1 song…} other{Downloading {count} songs…}}",
+  "@snackDownloading": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackDeletedDownloads": "{count, plural, =1{1 download removed.} other{{count} downloads removed.}}",
+  "@snackDeletedDownloads": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackAddedToQueue": "{count, plural, =1{Added 1 song to the end of the queue.} other{Added {count} songs to the end of the queue.}}",
+  "@snackAddedToQueue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+
+  "speedPitchTitle": "Speed & pitch",
+  "speedLabel": "Speed",
+  "pitchLabel": "Pitch (semitones)",
+  "pitchLockedHint": "Pitch locked to speed — the pitch slider is disabled.",
+  "chipmunkTitle": "Pitch follows speed (chipmunk)",
+  "chipmunkSubtitle": "Raising the speed raises the pitch and vice versa, like an old tape. Default: independent pitch.",
+  "sleepTimerTitle": "Sleep timer",
+  "sleepAtTrackEnd": "End of song",
+  "sleepMinutes": "{minutes} min",
+  "@sleepMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepStatusTrackEnd": "Playback will pause when this song ends.",
+  "sleepStatusAt": "Will pause at {time}.",
+  "@sleepStatusAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+
+  "nowPlaying": "Now playing",
+  "nothingPlaying": "Nothing playing.",
+  "tooltipShowQueue": "Show queue",
+  "tooltipHideQueue": "Hide queue",
+  "tooltipShowCover": "Show cover",
+  "tooltipShowVideo": "Show video",
+  "tooltipChangeColor": "Change color",
+  "tooltipShowLyrics": "Show lyrics",
+  "tooltipHideLyrics": "Hide lyrics",
+  "tooltipMoreOptions": "More options",
+
+  "onboardSkip": "Skip",
+  "onboardNext": "Next",
+  "onboardWelcomeTitle": "Welcome to Vibra",
+  "onboardWelcomeBody": "Your local music and the YouTube Music catalog in a single player, with an interface that takes on the colors of each album cover. Backgrounds, shapes and animations: everything is customizable in Settings.",
+  "onboardLibraryTitle": "Library & downloads",
+  "onboardLibraryBody": "Vibra scans the music on your device and groups it by albums and artists. Streaming songs can be downloaded (⋮ menu → Download) and are saved as MP3 with cover art in a public folder — visible from your file manager and other apps.",
+  "onboardAccountTitle": "Your account (optional)",
+  "onboardAccountBody": "Without an account you can search and play the whole catalog. Signing in with Google also unlocks your personal library: your playlists, likes, history and tailored recommendations.",
+  "onboardSignIn": "Sign in with Google",
+  "onboardExplore": "Explore without an account"
+}

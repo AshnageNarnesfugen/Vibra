@@ -1,0 +1,177 @@
+{
+  "@@locale": "es",
+
+  "homeTab": "Inicio",
+  "libraryTab": "Biblioteca",
+  "settingsTitle": "Ajustes",
+  "cancel": "Cancelar",
+
+  "settingsAccountTitle": "Cuenta de YouTube Music",
+  "settingsAccountActive": "Sesión activa — biblioteca personal habilitada",
+  "settingsAccountOauthLimited": "OAuth guardado pero limitado por Google — usá cookie",
+  "settingsAccountNone": "Sin sesión — solo búsqueda pública",
+  "settingsBackgroundTitle": "Fondo",
+  "settingsBackgroundSubtitle": "Color sólido o imagen ajustable, opacidad",
+  "settingsEffectsTitle": "Efectos",
+  "settingsEffectsSubtitle": "Blur, ruido y parallax al inclinar el dispositivo",
+  "settingsThemeTitle": "Tema y color",
+  "settingsThemeSubtitle": "Color dinámico desde la portada o acento por defecto",
+  "settingsSpacingTitle": "Espaciado y bordes",
+  "settingsSpacingSubtitle": "Densidad y radio uniforme",
+  "settingsAnimationsTitle": "Animaciones",
+  "settingsAnimationsSubtitle": "Estilo y duración de las transiciones",
+  "settingsQualityTitle": "Calidad de audio y video",
+  "settingsQualitySubtitle": "Bitrate diferente en WiFi vs datos móviles; calidad de descargas",
+  "settingsStorageTitle": "Almacenamiento",
+  "settingsStorageSubtitle": "Dónde vive la música descargada y las carpetas de la app",
+  "settingsEqTitle": "Ecualizador",
+  "settingsEqSubtitle": "Bandas + preamp + presets (Rock, Bass Boost, V-Shape…) y mezclas propias",
+  "settingsHifiTitle": "Modo Hi-Fi (bit-perfect)",
+  "settingsHifiSubtitle": "Desactiva EQ, fades y procesado; monitor de output device y capability AAudio",
+  "settingsFloatingTitle": "Mini flotante",
+  "settingsFloatingSubtitle": "Widget pill sobre el sistema con cover + controles (experimental, solo Android)",
+  "settingsLanguageTitle": "Idioma",
+  "settingsLanguageSubtitle": "Sigue al sistema o elígelo manualmente",
+  "settingsReset": "Restablecer ajustes",
+
+  "languageSystem": "Sistema",
+  "languageScreenHint": "Por defecto Vibra usa el idioma configurado en tu dispositivo. Elige uno aquí para forzarlo solo en la app.",
+
+  "qualityAudioWifi": "Audio en WiFi",
+  "qualityAudioCellular": "Audio en datos móviles",
+  "qualityAudioCellularSubtitle": "Por defecto media para no quemar el plan. Sube a alta si tienes datos ilimitados.",
+  "qualityVideoWifi": "Video en WiFi",
+  "qualityVideoWifiSubtitle": "Resolución de imagen del music video. El cambio aplica al siguiente video que cargue.",
+  "qualityVideoCellular": "Video en datos móviles",
+  "qualityVideoCellularSubtitle": "Default baja — 5 minutos de music video en 720p+ consumen ~100MB.",
+  "qualityDownloads": "Calidad de descargas",
+  "qualityDownloadsSubtitle": "Se aplica a las canciones descargadas para reproducir offline. Los archivos quedan en el dispositivo.",
+  "qualityAudioLow": "Baja (~96 kbps)",
+  "qualityAudioMedium": "Media (~160 kbps)",
+  "qualityAudioHigh": "Alta",
+  "qualityVideoLow": "Baja (360p)",
+  "qualityVideoMedium": "Media (720p)",
+  "qualityVideoHigh": "Alta (máxima disponible)",
+  "autoplayTitle": "Autoplay al acabar la cola",
+  "autoplaySubtitle": "Cuando la cola de streaming termina (sin repetir), sigue con canciones relacionadas a la última — como YT Music. Apágalo si prefieres que la música pare al terminar.",
+  "downloadAsMp3Title": "Descargar como MP3",
+  "downloadAsMp3Subtitle": "Convierte la descarga a MP3 256 kbps con metadata incrustada (título, artista, álbum y carátula) — máxima compatibilidad con otras apps y dispositivos. La conversión tarda ~1-2 min por canción. Desactivado: se guarda el stream original (m4a/opus), más rápido y sin re-compresión.",
+
+  "downloadsTitle": "Descargas",
+  "downloadsCancelAll": "Cancelar todo",
+  "downloadsQueuedHeader": "En cola · {count}",
+  "@downloadsQueuedHeader": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadsDoneHeader": "Descargadas · {count}",
+  "@downloadsDoneHeader": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "downloadsEmptyQueue": "No hay descargas en cola.",
+  "downloadsEmptyDone": "Todavía no descargaste ninguna canción. Usa \"Descargar\" en el menú de una canción de streaming.",
+  "downloadsConverting": "Convirtiendo…",
+  "downloadsWaiting": "En espera · #{position}",
+  "@downloadsWaiting": {
+    "placeholders": {
+      "position": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadsUnavailable": "El servicio de descargas no está disponible.",
+  "downloadsDeleteTooltip": "Borrar descarga",
+
+  "actionPlay": "Reproducir",
+  "actionShuffle": "Reproducir aleatorio",
+  "actionPlayNext": "Reproducir a continuación",
+  "actionAddToQueue": "Añadir a la cola actual",
+  "actionSaveToPlaylist": "Guardar en playlist",
+  "actionDownload": "Descargar para offline",
+  "actionDownloadAll": "Descargar todas",
+  "actionRemoveDownload": "Quitar descarga",
+  "actionRemoveDownloads": "Quitar descargas",
+  "actionInQueue": "En cola…",
+  "actionDownloadsUnavailable": "Descargas no disponibles",
+  "actionGoToArtist": "Ir al artista",
+  "actionGoToAlbum": "Ir al álbum",
+  "snackDownloading": "{count, plural, =1{Descargando 1 canción…} other{Descargando {count} canciones…}}",
+  "@snackDownloading": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackDeletedDownloads": "{count, plural, =1{1 descarga eliminada.} other{{count} descargas eliminadas.}}",
+  "@snackDeletedDownloads": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "snackAddedToQueue": "{count, plural, =1{Añadida 1 canción al final de la cola.} other{Añadidas {count} canciones al final de la cola.}}",
+  "@snackAddedToQueue": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+
+  "speedPitchTitle": "Velocidad y tono",
+  "speedLabel": "Velocidad",
+  "pitchLabel": "Tono (semitonos)",
+  "pitchLockedHint": "Pitch bloqueado a velocidad — el slider de tono queda desactivado.",
+  "chipmunkTitle": "Tono sigue a velocidad (chipmunk)",
+  "chipmunkSubtitle": "Subir velocidad sube el tono y viceversa, como una cinta vieja. Default: tono independiente.",
+  "sleepTimerTitle": "Temporizador de apagado",
+  "sleepAtTrackEnd": "Fin de canción",
+  "sleepMinutes": "{minutes} min",
+  "@sleepMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "sleepStatusTrackEnd": "Se pausará al terminar esta canción.",
+  "sleepStatusAt": "Se pausará a las {time}.",
+  "@sleepStatusAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+
+  "nowPlaying": "Reproduciendo",
+  "nothingPlaying": "Nada en reproducción.",
+  "tooltipShowQueue": "Ver cola",
+  "tooltipHideQueue": "Ocultar cola",
+  "tooltipShowCover": "Ver carátula",
+  "tooltipShowVideo": "Ver video",
+  "tooltipChangeColor": "Cambiar color",
+  "tooltipShowLyrics": "Ver letra",
+  "tooltipHideLyrics": "Ocultar letra",
+  "tooltipMoreOptions": "Más opciones",
+
+  "onboardSkip": "Saltar",
+  "onboardNext": "Siguiente",
+  "onboardWelcomeTitle": "Bienvenido a Vibra",
+  "onboardWelcomeBody": "Tu música local y el catálogo de YouTube Music en un solo reproductor, con una interfaz que se tiñe con los colores de cada portada. Fondos, formas y animaciones: todo se puede personalizar en Ajustes.",
+  "onboardLibraryTitle": "Biblioteca y descargas",
+  "onboardLibraryBody": "Vibra escanea la música de tu dispositivo y la agrupa por álbumes y artistas. Las canciones de streaming se pueden descargar (menú ⋮ → Descargar) y quedan como MP3 con carátula en una carpeta pública — visibles desde el explorador de archivos y otras apps.",
+  "onboardAccountTitle": "Tu cuenta (opcional)",
+  "onboardAccountBody": "Sin cuenta puedes buscar y reproducir todo el catálogo. Iniciando sesión con Google además tienes tu biblioteca personal: tus playlists, gustadas, historial y recomendaciones a tu medida.",
+  "onboardSignIn": "Iniciar sesión con Google",
+  "onboardExplore": "Explorar sin cuenta"
+}
