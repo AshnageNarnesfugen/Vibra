@@ -12,7 +12,9 @@ import '../screens/artist_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/player_screen.dart';
 import '../services/download_service.dart';
+import '../services/ratings_service.dart';
 import 'save_to_playlist_sheet.dart';
+import 'star_rating.dart';
 import '../core/dev_log.dart';
 
 /// Menú de contexto compartido para canciones (1) o álbumes/playlists (varias).
@@ -181,6 +183,26 @@ class _SongContextSheet extends StatelessWidget {
                 await showSaveToPlaylistSheet(context, songs: songs);
               },
             ),
+            // Calificación local (0.5–5★). RYM no tiene API pública, así
+            // que el rating vive en la app con export CSV — ver
+            // RatingsService para el contexto completo.
+            if (_single)
+              Builder(builder: (ctx) {
+                final rating =
+                    ctx.watch<RatingsService?>()?.ratingOf(_first.id);
+                return _Action(
+                  icon: rating != null
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  label: rating != null
+                      ? 'Calificación · ${rating.toStringAsFixed(1)}★'
+                      : 'Calificar',
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    await showRatingSheet(ctx, _first);
+                  },
+                );
+              }),
             // Solo para streaming: las canciones locales ya están en disco.
             // Cambia entre "Descargar" y "Quitar descarga" según estado.
             if (songs.any((s) => s.isStreaming)) _buildDownloadAction(context),

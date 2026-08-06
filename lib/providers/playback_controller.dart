@@ -18,6 +18,7 @@ import '../services/download_service.dart';
 import '../services/dsd_decoder.dart';
 import '../services/library_service.dart';
 import '../services/network_quality_resolver.dart';
+import '../services/play_stats_service.dart';
 import '../services/streaming/streaming_service.dart';
 import '../core/dev_log.dart';
 
@@ -47,6 +48,7 @@ class PlaybackController extends ChangeNotifier {
     required this.settings,
     this.network,
     this.downloads,
+    this.stats,
   }) {
     _wireListeners();
     _lastSource = settings.value.librarySource;
@@ -65,6 +67,10 @@ class PlaybackController extends ChangeNotifier {
   final PaletteSignal palette;
   final StreamingService streaming;
   final SettingsController settings;
+
+  /// Estadísticas de escucha para el perfil musical. Opcional — sin él
+  /// la reproducción funciona igual, solo no se registra nada.
+  final PlayStatsService? stats;
   /// Opcional para entornos donde no hay connectivity (desktop tests).
   /// Cuando null, se pide a YT el bitrate más alto disponible.
   final NetworkQualityResolver? network;
@@ -715,8 +721,16 @@ class PlaybackController extends ChangeNotifier {
     // Cualquier reproducción explícita invalida el estado "restaurado
     // pendiente" — el usuario ya eligió qué oír.
     _restorePending = false;
+    // Cerrar la sesión de escucha de la canción saliente (con su posición
+    // real — el service decide si fue escucha, skip o zapping).
+    final outgoing = currentSong;
+    if (outgoing != null && (index != _index || _queue[index].id != outgoing.id)) {
+      stats?.onTrackEnd(outgoing,
+          position: _positionNotifier.value, duration: duration);
+    }
     _index = index;
     final song = _queue[_index];
+    stats?.onTrackStart(song);
 
     // Format info: limpiar inmediatamente (la canción anterior ya no es la
     // que suena) y leer en background para canciones locales. Streaming
@@ -964,6 +978,10 @@ class PlaybackController extends ChangeNotifier {
   /// pasa por `next()` y siempre avanza.
   Future<void> _onTrackComplete() async {
     if (_queue.isEmpty) return;
+    final done = currentSong;
+    if (done != null) {
+      stats?.onTrackComplete(done, duration: duration);
+    }
     // Sleep timer en modo "fin de canción": pausa aquí en vez de avanzar.
     if (_sleepAtTrackEnd) {
       _sleepAtTrackEnd = false;

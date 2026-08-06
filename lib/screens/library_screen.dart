@@ -27,6 +27,8 @@ import 'player_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'downloads_screen.dart';
+import 'music_profile_screen.dart';
+import 'ratings_screen.dart';
 import 'local_album_detail_screen.dart';
 import 'playlist_detail_screen.dart';
 import 'search_screen.dart';
@@ -299,6 +301,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
       // adaptado al modo.
       onRefresh: () => _onPullToRefresh(isStreaming),
       actions: [
+        IconButton(
+          tooltip: 'Perfil musical',
+          icon: const Icon(Icons.insights_rounded),
+          onPressed: () {
+            final s = UiSettingsScope.of(context);
+            Navigator.of(context).pushAnimated(
+              const MusicProfileScreen(),
+              style: s.transitionStyle,
+              durationMs: s.transitionDurationMs,
+            );
+          },
+        ),
+        IconButton(
+          tooltip: 'Calificaciones',
+          icon: const Icon(Icons.star_outline_rounded),
+          onPressed: () {
+            final s = UiSettingsScope.of(context);
+            Navigator.of(context).pushAnimated(
+              const RatingsScreen(),
+              style: s.transitionStyle,
+              durationMs: s.transitionDurationMs,
+            );
+          },
+        ),
         // Icono de descargas con badge de cantidad en cola. El badge solo
         // aparece cuando hay descargas activas/pendientes.
         Consumer<DownloadService?>(

@@ -27,6 +27,8 @@ import 'services/adaptive_luminance_service.dart';
 import 'services/ambient_video_palette_service.dart';
 import 'services/app_storage.dart';
 import 'services/background_accent_extractor.dart';
+import 'services/play_stats_service.dart';
+import 'services/ratings_service.dart';
 import 'services/audio_service.dart';
 import 'services/blurred_background.dart';
 import 'services/wakelock_controller.dart';
@@ -227,6 +229,10 @@ Future<void> main() async {
   // No-op si no hay imagen o si ya está cacheado.
   unawaited(ensureBackgroundImageAccent(settings));
 
+  // Rating local de canciones + estadísticas de escucha (perfil musical).
+  final ratingsSvc = await RatingsService.create();
+  final playStats = await PlayStatsService.create();
+
   final playback = PlaybackController(
     audio: audio,
     library: library,
@@ -235,6 +241,7 @@ Future<void> main() async {
     settings: settings,
     network: network,
     downloads: downloads,
+    stats: playStats,
   );
   // Restaurar la cola de la sesión anterior (sin reproducir): el mini
   // player aparece con la última canción lista y el primer play retoma
@@ -411,6 +418,8 @@ Future<void> main() async {
         ChangeNotifierProvider<FloatingControlsService>.value(value: floating),
         ChangeNotifierProvider<EqualizerController>.value(value: equalizer),
         ChangeNotifierProvider<BitPerfectController>.value(value: bitPerfect),
+        ChangeNotifierProvider<RatingsService?>.value(value: ratingsSvc),
+        ChangeNotifierProvider<PlayStatsService?>.value(value: playStats),
       ],
       child: VibraApp(showOnboarding: showOnboarding),
     );

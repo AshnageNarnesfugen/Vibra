@@ -208,6 +208,9 @@ class UiSettings {
     this.downloadAsMp3 = true,
     this.autoplayRelated = true,
     this.appLanguageCode,
+    this.aiProvider = 'anthropic',
+    this.aiApiKey,
+    this.aiModel,
     this.floatingMiniEnabled = false,
     this.fadeOnPlayPauseEnabled = false,
     this.fadeDurationMs = 350,
@@ -339,6 +342,14 @@ class UiSettings {
   /// Idioma forzado de la app ('es', 'en'). `null` = seguir el idioma
   /// del sistema (default). Se elige en Ajustes → Idioma.
   final String? appLanguageCode;
+
+  /// Proveedor de IA para el brief del perfil musical ('anthropic',
+  /// 'openai', 'gemini'). La API key es del usuario y vive SOLO en este
+  /// dispositivo (SharedPreferences); el modelo null = default del
+  /// proveedor.
+  final String aiProvider;
+  final String? aiApiKey;
+  final String? aiModel;
 
   /// Mini reproductor flotante (Dynamic Island estilo) sobre el sistema.
   /// Solo Android. Requiere permiso `SYSTEM_ALERT_WINDOW` que el usuario
@@ -543,6 +554,11 @@ class UiSettings {
     bool? autoplayRelated,
     String? appLanguageCode,
     bool clearAppLanguageCode = false,
+    String? aiProvider,
+    String? aiApiKey,
+    bool clearAiApiKey = false,
+    String? aiModel,
+    bool clearAiModel = false,
     bool? floatingMiniEnabled,
     bool? fadeOnPlayPauseEnabled,
     int? fadeDurationMs,
@@ -615,6 +631,9 @@ class UiSettings {
       appLanguageCode: clearAppLanguageCode
           ? null
           : (appLanguageCode ?? this.appLanguageCode),
+      aiProvider: aiProvider ?? this.aiProvider,
+      aiApiKey: clearAiApiKey ? null : (aiApiKey ?? this.aiApiKey),
+      aiModel: clearAiModel ? null : (aiModel ?? this.aiModel),
       floatingMiniEnabled: floatingMiniEnabled ?? this.floatingMiniEnabled,
       fadeOnPlayPauseEnabled:
           fadeOnPlayPauseEnabled ?? this.fadeOnPlayPauseEnabled,
@@ -708,6 +727,9 @@ class UiSettings {
         'downloadAsMp3': downloadAsMp3,
         'autoplayRelated': autoplayRelated,
         'appLanguageCode': appLanguageCode,
+        'aiProvider': aiProvider,
+        'aiApiKey': aiApiKey,
+        'aiModel': aiModel,
         'floatingMiniEnabled': floatingMiniEnabled,
         'fadeOnPlayPauseEnabled': fadeOnPlayPauseEnabled,
         'fadeDurationMs': fadeDurationMs,
@@ -796,6 +818,9 @@ class UiSettings {
       downloadAsMp3: m['downloadAsMp3'] as bool? ?? true,
       autoplayRelated: m['autoplayRelated'] as bool? ?? true,
       appLanguageCode: m['appLanguageCode'] as String?,
+      aiProvider: m['aiProvider'] as String? ?? 'anthropic',
+      aiApiKey: m['aiApiKey'] as String?,
+      aiModel: m['aiModel'] as String?,
       floatingMiniEnabled: m['floatingMiniEnabled'] as bool? ?? false,
       fadeOnPlayPauseEnabled:
           m['fadeOnPlayPauseEnabled'] as bool? ?? false,
