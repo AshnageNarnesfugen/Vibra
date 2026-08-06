@@ -6,7 +6,9 @@ import '../core/theme/layout_tokens.dart';
 import '../services/ai_brief_service.dart';
 import '../services/play_stats_service.dart';
 import '../services/ratings_service.dart';
+import '../services/streaming/streaming_service.dart';
 import '../services/taste_profile.dart';
+import '../services/yt_stats_importer.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/song_thumbnail.dart';
 import '../widgets/star_rating.dart';
@@ -25,6 +27,30 @@ class MusicProfileScreen extends StatefulWidget {
 
 class _MusicProfileScreenState extends State<MusicProfileScreen> {
   final _briefSvc = AiBriefService();
+  YtStatsImporter? _importer;
+  bool _ytSyncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Sincronizar señales de YT Music al abrir (cooldown 1h dentro del
+    // importer). Fusiona historial + "Vuelve a escucharlo" + likes con
+    // las estadísticas locales.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncYt());
+  }
+
+  Future<void> _syncYt({bool force = false}) async {
+    final stats = context.read<PlayStatsService?>();
+    if (stats == null) return;
+    _importer ??= YtStatsImporter(
+      streaming: context.read<StreamingService>(),
+      stats: stats,
+    );
+    setState(() => _ytSyncing = true);
+    await _importer!.sync(force: force);
+    if (mounted) setState(() => _ytSyncing = false);
+  }
+
   final _customPrompt = TextEditingController();
   String? _briefResult;
   String? _briefError;
@@ -104,7 +130,21 @@ class _MusicProfileScreenState extends State<MusicProfileScreen> {
     return StableBackdropGroup(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(title: const Text('Perfil musical')),
+        appBar: AppBar(
+          title: const Text('Perfil musical'),
+          actions: [
+            IconButton(
+              tooltip: 'Sincronizar con YouTube Music',
+              onPressed: _ytSyncing ? null : () => _syncYt(force: true),
+              icon: _ytSyncing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.sync_rounded),
+            ),
+          ],
+        ),
         body: ListView(
           padding: tokens.pagePadding(),
           children: [
@@ -114,10 +154,11 @@ class _MusicProfileScreenState extends State<MusicProfileScreen> {
               GlassCard(
                 child: Text(
                   'Aún no hay suficiente historial. El perfil se construye '
-                  'mientras escuchas: cada canción necesita al menos '
-                  '${TasteProfile.minPlays} reproducciones para puntuar. '
-                  'Las calificaciones (menú ⋮ → Calificar) también '
-                  'alimentan el análisis.',
+                  'mientras escuchas y se FUSIONA con tu historial, likes y '
+                  '"Vuelve a escucharlo" de YouTube Music (botón de sync '
+                  'arriba — requiere sesión). Cada canción necesita '
+                  '${TasteProfile.minPlays}+ señales para puntuar; las '
+                  'calificaciones (menú ⋮ → Calificar) también cuentan.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               )

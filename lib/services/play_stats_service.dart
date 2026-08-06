@@ -24,8 +24,12 @@ class SongStats {
     this.lastAt,
     Map<String, int>? days,
     Map<String, int>? hours,
+    Set<String>? ytDays,
+    this.ytLiked = false,
+    this.ytListenAgain = 0.0,
   })  : days = days ?? {},
-        hours = hours ?? {};
+        hours = hours ?? {},
+        ytDays = ytDays ?? {};
 
   Song song;
   int plays;
@@ -42,6 +46,23 @@ class SongStats {
   /// '0'..'23' → reproducciones en esa hora del día (hábitos horarios).
   final Map<String, int> hours;
 
+  // ─── Señales importadas del algoritmo de YouTube Music ───
+  // Se fusionan con lo local pero NO contaminan las métricas de calidad
+  // (attention/depth): YT solo aporta PRESENCIA (en qué días escuchaste,
+  // también fuera de Vibra) y señales algorítmicas (like, posición en
+  // "Vuelve a escucharlo").
+
+  /// Días 'yyyy-MM-dd' en los que YT Music registró esta canción en tu
+  /// historial. Entra a la constancia del score junto con [days].
+  final Set<String> ytDays;
+
+  /// Marcada con "Me gusta" en YT Music.
+  bool ytLiked;
+
+  /// Boost 0..1 por posición en el shelf "Vuelve a escucharlo" del home
+  /// (1.0 = primera posición). 0 = no aparece.
+  double ytListenAgain;
+
   Map<String, dynamic> toJson() => {
         'song': song.toJson(),
         'plays': plays,
@@ -52,6 +73,9 @@ class SongStats {
         'lastAt': lastAt?.millisecondsSinceEpoch,
         'days': days,
         'hours': hours,
+        'ytDays': ytDays.toList(),
+        'ytLiked': ytLiked,
+        'ytListenAgain': ytListenAgain,
       };
 
   factory SongStats.fromJson(Map<String, dynamic> m) => SongStats(
@@ -72,6 +96,12 @@ class SongStats {
         hours: (m['hours'] as Map<String, dynamic>?)
                 ?.map((k, v) => MapEntry(k, (v as num).toInt())) ??
             {},
+        ytDays: (m['ytDays'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toSet() ??
+            {},
+        ytLiked: m['ytLiked'] as bool? ?? false,
+        ytListenAgain: (m['ytListenAgain'] as num?)?.toDouble() ?? 0.0,
       );
 }
 
@@ -192,6 +222,64 @@ class PlayStatsService extends ChangeNotifier {
     if (_openId == song.id) _openId = null;
     _schedulePersist();
   }
+
+  // ─── Import de señales de YouTube Music ───
+
+  SongStats _ensure(Song song) {
+    final s = _stats.putIfAbsent(song.id, () => SongStats(song: song));
+    return s;
+  }
+
+  /// Registra que YT Music vio esta canción en tu historial el día
+  /// [dayKey] ('yyyy-MM-dd'). Idempotente por (canción, día).
+  void mergeYtDay(Song song, String dayKey) {
+    final s = _ensure(song);
+    if (s.ytDays.contains(dayKey)) return;
+    s.ytDays.add(dayKey);
+    if (s.ytDays.length > 400) {
+      final sorted = s.ytDays.toList()..sort();
+      for (final k in sorted.take(s.ytDays.length - 400)) {
+        s.ytDays.remove(k);
+      }
+    }
+    _dirty = true;
+  }
+
+  /// Marca/desmarca el like de YT Music.
+  void setYtLiked(Song song, bool liked) {
+    final s = _ensure(song);
+    if (s.ytLiked == liked) return;
+    s.ytLiked = liked;
+    _dirty = true;
+  }
+
+  /// Boost por posición en "Vuelve a escucharlo" (se pisa en cada sync).
+  void setYtListenAgain(Song song, double boost) {
+    final s = _ensure(song);
+    if ((s.ytListenAgain - boost).abs() < 0.001) return;
+    s.ytListenAgain = boost;
+    _dirty = true;
+  }
+
+  /// Limpia los boosts de listen-again antes de re-aplicarlos (el shelf
+  /// cambia entre syncs; una canción que salió del shelf pierde el boost).
+  void clearYtListenAgain() {
+    for (final s in _stats.values) {
+      if (s.ytListenAgain != 0) {
+        s.ytListenAgain = 0;
+        _dirty = true;
+      }
+    }
+  }
+
+  /// Llamar al terminar un batch de import: notifica y persiste una vez.
+  void commitYtImport() {
+    if (!_dirty) return;
+    _dirty = false;
+    _schedulePersist();
+  }
+
+  bool _dirty = false;
 
   void _schedulePersist() {
     notifyListeners();

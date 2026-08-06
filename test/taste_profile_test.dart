@@ -92,6 +92,38 @@ void main() {
     });
   });
 
+  group('señales de YouTube Music', () {
+    test('los días del historial de YT cuentan como evidencia y constancia',
+        () {
+      // Sin plays locales: solo presencia en el historial de YT.
+      final ytOnly = SongStats(
+        song: _song('yt'),
+        plays: 0,
+        ytDays: {day(1), day(6), day(14), day(22)},
+      );
+      final score = TasteProfile.spiritualScore(ytOnly, null, now: now);
+      expect(score, isNotNull);
+      expect(score, greaterThan(0.3));
+    });
+
+    test('el like y "Vuelve a escucharlo" suben el score', () {
+      SongStats mk({bool liked = false, double la = 0}) => SongStats(
+            song: _song('sig'),
+            plays: 6,
+            completes: 5,
+            msListened: 5 * 200000,
+            firstAt: now.subtract(const Duration(days: 30)),
+            days: {day(2): 2, day(10): 2, day(20): 2},
+            ytLiked: liked,
+            ytListenAgain: la,
+          );
+      final plain = TasteProfile.spiritualScore(mk(), null, now: now)!;
+      final boosted = TasteProfile.spiritualScore(
+          mk(liked: true, la: 1.0), null, now: now)!;
+      expect(boosted, greaterThan(plain));
+    });
+  });
+
   group('agrupación por artista', () {
     test('agrupa y ordena por score', () {
       final stats = [
@@ -121,3 +153,5 @@ void main() {
     });
   });
 }
+
+
