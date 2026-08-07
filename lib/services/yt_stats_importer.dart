@@ -31,6 +31,9 @@ class YtStatsImporter {
   bool _syncing = false;
   bool get syncing => _syncing;
 
+  /// Resultado del último sync (para feedback en la UI).
+  YtSyncResult? lastResult;
+
   static String _dayKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
@@ -51,7 +54,10 @@ class YtStatsImporter {
   /// Devuelve true si corrió un sync.
   Future<bool> sync({bool force = false}) async {
     if (_syncing) return false;
-    if (!streaming.hasAuth) return false;
+    if (!streaming.hasAuth) {
+      lastResult = const YtSyncResult(noAuth: true);
+      return false;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!force) {
@@ -82,14 +88,21 @@ class YtStatsImporter {
       final home = results[1] as List<HomeShelf>;
       final liked = results[2] as List<StreamingTrack>;
 
-      _importHistory(history);
-      _importListenAgain([...home, ...history]);
+      final histCounts = _importHistory(history);
+      final laCount = _importListenAgain([...home, ...history]);
       _importLiked(liked);
       stats.commitYtImport();
 
+      lastResult = YtSyncResult(
+        historyDated: histCounts.$1,
+        historyUndated: histCounts.$2,
+        listenAgain: laCount,
+        likes: liked.length,
+      );
       await prefs.setInt(
           _kLastSyncKey, DateTime.now().millisecondsSinceEpoch);
-      devLog('[YTSTATS] sync ok: ${history.length} shelves historial, '
+      devLog('[YTSTATS] sync ok: ${histCounts.$1} fechadas + '
+          '${histCounts.$2} sin fecha, $laCount listen-again, '
           '${liked.length} likes');
       return true;
     } catch (e) {
@@ -119,13 +132,14 @@ class YtStatsImporter {
   }
 
   /// Mapea el título del shelf de historial a una fecha concreta. YT
-  /// agrupa por "Hoy"/"Ayer"/día de la semana (localizado es/en); los
-  /// grupos más viejos ("Marzo 2026") no se pueden fechar con precisión
-  /// y se saltan — la ventana reciente es la que alimenta la constancia.
+  /// agrupa por "Hoy"/"Ayer"/día de la semana (el cliente pide hl=en,
+  /// pero cubrimos es/en por si el server localiza distinto). Los grupos
+  /// más viejos ("March 2026") no se pueden fechar — sus items cuentan
+  /// como evidencia sin fecha (ytHits).
   DateTime? _dateForShelfTitle(String title, DateTime now) {
     final t = title.trim().toLowerCase();
-    if (t == 'hoy' || t == 'today') return now;
-    if (t == 'ayer' || t == 'yesterday') {
+    if (t.contains('hoy') || t.contains('today')) return now;
+    if (t.contains('ayer') || t.contains('yesterday')) {
       return now.subtract(const Duration(days: 1));
     }
     const weekdays = {
@@ -148,20 +162,32 @@ class YtStatsImporter {
     return null;
   }
 
-  void _importHistory(List<HomeShelf> shelves) {
+  /// Devuelve (items con fecha, items sin fecha).
+  (int, int) _importHistory(List<HomeShelf> shelves) {
     final now = DateTime.now();
+    var dated = 0;
+    var undated = 0;
+    // Una canción solo suma UN hit sin fecha por sync (el mismo shelf se
+    // re-fetchea en cada sync).
+    final hitThisSync = <String>{};
     for (final shelf in shelves) {
       final date = _dateForShelfTitle(shelf.title, now);
-      if (date == null) continue;
-      final key = _dayKey(date);
       for (final item in shelf.items) {
         final song = _songFromItem(item);
-        if (song != null) stats.mergeYtDay(song, key);
+        if (song == null) continue;
+        if (date != null) {
+          stats.mergeYtDay(song, _dayKey(date));
+          dated++;
+        } else if (hitThisSync.add(song.id)) {
+          stats.mergeYtHit(song);
+          undated++;
+        }
       }
     }
+    return (dated, undated);
   }
 
-  void _importListenAgain(List<HomeShelf> shelves) {
+  int _importListenAgain(List<HomeShelf> shelves) {
     final la = shelves.where((s) {
       final t = s.title.toLowerCase();
       return t.contains('listen again') ||
@@ -169,7 +195,7 @@ class YtStatsImporter {
           t.contains('escucha de nuevo') ||
           t.contains('escuchar de nuevo');
     }).toList();
-    if (la.isEmpty) return;
+    if (la.isEmpty) return 0;
     // Reset: una canción que salió del shelf pierde su boost.
     stats.clearYtListenAgain();
     final items = la.first.items;
@@ -179,6 +205,7 @@ class YtStatsImporter {
       final boost = items.length <= 1 ? 1.0 : 1.0 - i / (items.length - 1);
       stats.setYtListenAgain(song, boost.clamp(0.0, 1.0));
     }
+    return items.length;
   }
 
   void _importLiked(List<StreamingTrack> liked) {
@@ -186,4 +213,24 @@ class YtStatsImporter {
       stats.setYtLiked(t.toSong(), true);
     }
   }
+}
+
+
+/// Resumen de lo importado en un sync — para feedback en la UI.
+class YtSyncResult {
+  const YtSyncResult({
+    this.historyDated = 0,
+    this.historyUndated = 0,
+    this.listenAgain = 0,
+    this.likes = 0,
+    this.noAuth = false,
+  });
+
+  final int historyDated;
+  final int historyUndated;
+  final int listenAgain;
+  final int likes;
+  final bool noAuth;
+
+  int get total => historyDated + historyUndated + listenAgain + likes;
 }

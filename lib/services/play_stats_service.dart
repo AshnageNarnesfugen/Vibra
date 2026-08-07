@@ -27,6 +27,7 @@ class SongStats {
     Set<String>? ytDays,
     this.ytLiked = false,
     this.ytListenAgain = 0.0,
+    this.ytHits = 0,
   })  : days = days ?? {},
         hours = hours ?? {},
         ytDays = ytDays ?? {};
@@ -63,6 +64,11 @@ class SongStats {
   /// (1.0 = primera posición). 0 = no aparece.
   double ytListenAgain;
 
+  /// Apariciones en el historial de YT en shelves cuya fecha no se pudo
+  /// mapear (grupos viejos tipo "March 2026"). Cuentan como evidencia
+  /// aunque no puedan fechar la constancia.
+  int ytHits;
+
   Map<String, dynamic> toJson() => {
         'song': song.toJson(),
         'plays': plays,
@@ -76,6 +82,7 @@ class SongStats {
         'ytDays': ytDays.toList(),
         'ytLiked': ytLiked,
         'ytListenAgain': ytListenAgain,
+        'ytHits': ytHits,
       };
 
   factory SongStats.fromJson(Map<String, dynamic> m) => SongStats(
@@ -102,6 +109,7 @@ class SongStats {
             {},
         ytLiked: m['ytLiked'] as bool? ?? false,
         ytListenAgain: (m['ytListenAgain'] as num?)?.toDouble() ?? 0.0,
+        ytHits: (m['ytHits'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -242,6 +250,16 @@ class PlayStatsService extends ChangeNotifier {
         s.ytDays.remove(k);
       }
     }
+    _dirty = true;
+  }
+
+  /// Aparición en historial sin fecha mapeable. [dedupeKey] evita contar
+  /// la misma aparición dos veces entre syncs (shelf+posición estable no
+  /// existe, así que cap por sync desde el importer).
+  void mergeYtHit(Song song) {
+    final s = _ensure(song);
+    if (s.ytHits >= 30) return;
+    s.ytHits += 1;
     _dirty = true;
   }
 

@@ -42,13 +42,34 @@ class _MusicProfileScreenState extends State<MusicProfileScreen> {
   Future<void> _syncYt({bool force = false}) async {
     final stats = context.read<PlayStatsService?>();
     if (stats == null) return;
+    final messenger = ScaffoldMessenger.of(context);
     _importer ??= YtStatsImporter(
       streaming: context.read<StreamingService>(),
       stats: stats,
     );
     setState(() => _ytSyncing = true);
-    await _importer!.sync(force: force);
-    if (mounted) setState(() => _ytSyncing = false);
+    final ran = await _importer!.sync(force: force);
+    if (!mounted) return;
+    setState(() => _ytSyncing = false);
+    // Feedback solo en sync manual (force).
+    if (force) {
+      final r = _importer!.lastResult;
+      final String msg;
+      if (r == null || r.noAuth) {
+        msg = 'Inicia sesión en YouTube Music (Ajustes → Cuenta) para '
+            'importar tu historial, likes y "Vuelve a escucharlo".';
+      } else if (!ran && r.total == 0) {
+        msg = 'Sin señales nuevas de YouTube Music esta vez.';
+      } else {
+        msg = 'YT Music: ${r.historyDated + r.historyUndated} del '
+            'historial, ${r.listenAgain} de "Vuelve a escucharlo", '
+            '${r.likes} likes.';
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 4),
+      ));
+    }
   }
 
   final _customPrompt = TextEditingController();
@@ -150,6 +171,10 @@ class _MusicProfileScreenState extends State<MusicProfileScreen> {
           children: [
             _SummaryCard(profile: profile),
             SizedBox(height: tokens.gap),
+            if (profile.ytSignalSongs > 0) ...[
+              _YtSignalsCard(profile: profile),
+              SizedBox(height: tokens.gap),
+            ],
             if (!hasData)
               GlassCard(
                 child: Text(
@@ -666,6 +691,44 @@ class _AiBriefCard extends StatelessWidget {
                   ?.copyWith(height: 1.5),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+
+// ─────────────── Señales importadas de YT Music ───────────────
+
+class _YtSignalsCard extends StatelessWidget {
+  const _YtSignalsCard({required this.profile});
+  final TasteProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = LayoutTokensScope.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return GlassCard(
+      child: Row(
+        children: [
+          Icon(Icons.cloud_done_rounded, color: scheme.primary),
+          SizedBox(width: tokens.gap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Fusionado con YouTube Music',
+                    style: Theme.of(context).textTheme.titleSmall),
+                SizedBox(height: tokens.gapSm / 2),
+                Text(
+                  '${profile.ytSignalSongs} canciones con señales del '
+                  'algoritmo (historial, "Vuelve a escucharlo") · '
+                  '${profile.ytLikedCount} con like.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
