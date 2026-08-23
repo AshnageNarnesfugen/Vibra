@@ -1598,9 +1598,17 @@ class StreamingService {
       }
     }
 
+    // Pie de diagnóstico: sin esto es imposible saber si el PoToken llegó o
+    // si la sesión está completa. Ayuda a decidir el siguiente paso.
+    final a = _client.auth;
+    final diag = '[diag: '
+        'login=${a?.isCompleteCookieSession ?? false ? "completo" : (a?.isUsable ?? false ? "parcial" : "no")}, '
+        'poToken=${(_client.poToken?.isNotEmpty ?? false) ? "sí(${_client.poToken!.length})" : "no"}, '
+        'visitorData=${(a?.visitorData?.isNotEmpty ?? false) ? "sí" : "no"}, '
+        'dataSyncId=${(a?.dataSyncId?.isNotEmpty ?? false) ? "sí" : "no"}]';
     throw StateError(
       'No se pudo obtener el stream para $videoId. '
-      'Todos los clientes fallaron: ${errors.join(' · ')}',
+      'Todos los clientes fallaron: ${errors.join(' · ')} · $diag',
     );
   }
 
