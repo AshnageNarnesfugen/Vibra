@@ -1628,7 +1628,15 @@ class StreamingService {
           'visitorData=${(a?.visitorData?.isNotEmpty ?? false) ? "sí" : "no"} '
           'dataSyncId=${(a?.dataSyncId?.isNotEmpty ?? false) ? "sí" : "no"}')
       ..writeln('─────────');
-    for (final clientId in _client.orderedPlayerClients()) {
+    // Probamos la cascada normal + WEB_REMIX al final. WEB_REMIX acepta la
+    // cookie de navegador (SAPISIDHASH) que los clientes móviles nativos
+    // rechazan — si devuelve OK, el camino es WEB_REMIX (aunque las URLs
+    // vengan cifradas, lo que confirmaría que hace falta descifrado de firma).
+    final clients = <PlayerClientId>[
+      ..._client.orderedPlayerClients(),
+      PlayerClientId.webRemix,
+    ];
+    for (final clientId in clients) {
       try {
         final json = await _client.player(videoId, clientId: clientId);
         final status = _at(json, ['playabilityStatus', 'status']);
@@ -1640,9 +1648,14 @@ class StreamingService {
           if (formats is List) ...formats,
         ];
         final direct = all.where((f) => f is Map && f['url'] != null).length;
+        final ciph = all
+            .where((f) =>
+                f is Map &&
+                (f['signatureCipher'] != null || f['cipher'] != null))
+            .length;
         buf.writeln('${clientId.name}: status=$status'
             '${reason != null ? ' ($reason)' : ''} '
-            'formatos=${all.length} directos=$direct');
+            'formatos=${all.length} directos=$direct cifrados=$ciph');
       } catch (e) {
         buf.writeln('${clientId.name}: ERROR $e');
       }

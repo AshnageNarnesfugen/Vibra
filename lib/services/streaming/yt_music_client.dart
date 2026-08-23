@@ -247,6 +247,7 @@ class YtMusicClient {
         PlayerClientId.androidVrNoAuth => _androidVrNoAuth,
         PlayerClientId.androidMusic => _androidMusic,
         PlayerClientId.tvEmbedded => _tvEmbedded,
+        PlayerClientId.webRemix => _webMusic,
       };
 
   /// Búsqueda en YouTube Music con filtros.
@@ -571,16 +572,17 @@ class YtMusicClient {
             poToken!.isNotEmpty)
         ? '&pot=${Uri.encodeQueryComponent(poToken!)}'
         : '';
-    // **El endpoint `player` NO lleva `key=`**. La INNERTUBE_API_KEY es la del
-    // cliente WEB_REMIX; mandarla junto con un contexto ANDROID_MUSIC / IOS
-    // hace que el gateway rechace con 400 "invalid argument" /
-    // "precondition failed" — justo el error que veíamos con la sesión
-    // activa. OpenTune manda solo `prettyPrint=false` en el player y se apoya
-    // en el contexto del cliente + auth. El resto de endpoints (search,
-    // browse) sí usan `alt=json&key=` como siempre.
+    // El `key=` en el endpoint `player` va SOLO para el cliente WEB_REMIX
+    // (la INNERTUBE_API_KEY es la suya). Mandarla con un contexto móvil
+    // (ANDROID_MUSIC / IOS) hace que el gateway rechace con 400. Los clientes
+    // móviles se apoyan solo en el contexto + auth. El resto de endpoints
+    // (search, browse) usan `alt=json&key=` como siempre.
+    final isWebClient = client.clientName == 'WEB_REMIX';
     final Uri uri;
     if (endpoint == 'player') {
-      uri = Uri.parse('$_baseUrl/$endpoint?prettyPrint=false$potParam');
+      final keyParam = isWebClient ? '&key=$_innertubeApiKey' : '';
+      uri = Uri.parse(
+          '$_baseUrl/$endpoint?prettyPrint=false$keyParam$potParam');
     } else {
       uri = Uri.parse('$_baseUrl/$endpoint?alt=json&key=$_innertubeApiKey');
     }
@@ -769,6 +771,7 @@ enum PlayerClientId {
   androidVrNoAuth,
   androidMusic,
   tvEmbedded,
+  webRemix,
 }
 
 @immutable
