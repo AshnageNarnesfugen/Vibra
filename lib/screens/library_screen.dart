@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 
 import '../core/animations/page_transitions.dart';
@@ -51,7 +52,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _homeAttempted = false; // evita reintentos en cada rebuild
   String? _lastSourceForHome;
 
-  StreamSubscription<String>? _errorSub;
+  StreamSubscription<({String message, String detail})>? _errorSub;
 
   @override
   void initState() {
@@ -62,14 +63,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (lib.songs.isEmpty && !lib.isLoading) {
         lib.reload();
       }
-      _errorSub = context.read<PlaybackController>().errors.listen((msg) {
+      _errorSub = context.read<PlaybackController>().errors.listen((e) {
         if (!mounted) return;
         try {
+          // El SnackBar corta el texto largo (la cascada de clientes puede
+          // acumular varios errores). Si hay más detalle que el mensaje
+          // corto, ofrecemos "Detalles" → diálogo scrolleable + copiar.
+          final hasMore = e.detail.trim() != e.message.trim();
           ScaffoldMessenger.of(context)
             ..hideCurrentSnackBar()
             ..showSnackBar(SnackBar(
-              content: Text(msg),
-              duration: const Duration(seconds: 4),
+              content: Text(e.message),
+              duration: Duration(seconds: hasMore ? 7 : 4),
+              action: hasMore
+                  ? SnackBarAction(
+                      label: 'Detalles',
+                      onPressed: () => _showErrorDetails(e.detail),
+                    )
+                  : null,
             ));
         } catch (_) {}
       });
@@ -80,6 +91,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _errorSub?.cancel();
     super.dispose();
+  }
+
+  /// Diálogo con el error completo: texto seleccionable + scroll + botón de
+  /// copiar. Así el usuario puede leer/compartir la cadena entera de la
+  /// cascada de clientes (que no cabe en el SnackBar).
+  Future<void> _showErrorDetails(String detail) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Detalle del error'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              detail,
+              style: const TextStyle(fontSize: 13, height: 1.35),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copiar'),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: detail));
+              if (!ctx.mounted) return;
+              Navigator.of(ctx).pop();
+              messenger
+                ..hideCurrentSnackBar()
+                ..showSnackBar(const SnackBar(
+                  content: Text('Error copiado al portapapeles'),
+                  duration: Duration(seconds: 2),
+                ));
+            },
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Cambia a modo `manualFolder`. Si [forcePicker] es false y ya hay

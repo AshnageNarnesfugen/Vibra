@@ -77,8 +77,13 @@ class PlaybackController extends ChangeNotifier {
   final DownloadService? downloads;
 
   /// Stream para mensajes de error visibles (la UI los muestra en SnackBar).
-  final _errorController = StreamController<String>.broadcast();
-  Stream<String> get errors => _errorController.stream;
+  // El evento lleva un `message` corto (para el SnackBar) y el `detail`
+  // completo sin truncar (para el diálogo "Detalles" con copiar). Cuando no
+  // hay detalle extra, ambos coinciden.
+  final _errorController =
+      StreamController<({String message, String detail})>.broadcast();
+  Stream<({String message, String detail})> get errors =>
+      _errorController.stream;
 
   /// Wrapper seguro de `_errorController.add`: los errores del player
   /// llegan por callbacks async que pueden disparar DESPUÉS del dispose
@@ -86,9 +91,9 @@ class PlaybackController extends ChangeNotifier {
   /// cerrado lanza StateError — un crash silencioso en background que
   /// solo se ve en Sentry. Con el guard, el error tardío simplemente
   /// se descarta (ya no hay UI que lo muestre de todos modos).
-  void _emitError(String msg) {
+  void _emitError(String msg, {String? detail}) {
     if (_errorController.isClosed) return;
-    _errorController.add(msg);
+    _errorController.add((message: msg, detail: detail ?? msg));
   }
 
   late LibrarySource _lastSource;
@@ -831,11 +836,13 @@ class PlaybackController extends ChangeNotifier {
       _prefetchNext();
     } catch (e) {
       devLog('play error: $e');
-      // Surfaceamos el error a la UI: SnackBar con mensaje legible.
-      final msg = song.isStreaming
-          ? 'No se pudo reproducir desde YouTube Music: ${_short(e)}'
-          : 'No se pudo reproducir el archivo: ${_short(e)}';
-      _emitError(msg);
+      // Surfaceamos el error a la UI: SnackBar con mensaje corto + detalle
+      // completo copiable (la cascada de clientes puede acumular varios
+      // errores y el texto no cabe en el SnackBar).
+      final prefix = song.isStreaming
+          ? 'No se pudo reproducir desde YouTube Music: '
+          : 'No se pudo reproducir el archivo: ';
+      _emitError('$prefix${_short(e)}', detail: '$prefix${e.toString()}');
     } finally {
       _loading = false;
       notifyListeners();
