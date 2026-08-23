@@ -23,6 +23,55 @@ class EffectsSettingsScreen extends StatelessWidget {
       body: ListView(
         padding: tokens.pagePadding(),
         children: [
+          // ---------- Rendimiento ----------
+          // El desenfoque y las transparencias son los efectos más caros
+          // en GPU; en teléfonos de gama media pueden causar stutter al
+          // scrollear. Este atajo los apaga todos de una.
+          _SectionHeader(label: 'Rendimiento'),
+          SizedBox(height: tokens.gapSm),
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'El desenfoque, el frosted glass y el parallax son los '
+                  'efectos que más exigen a la GPU. Si notas tirones al '
+                  'desplazarte, apágalos con un toque — la app se ve más '
+                  'plana pero fluye mejor.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                SizedBox(height: tokens.gap),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => ctrl.update((p) => p.copyWith(
+                              blurEnabled: false,
+                              cardBlurEnabled: false,
+                              parallaxEnabled: false,
+                              noiseIntensity: 0,
+                            )),
+                        icon: const Icon(Icons.bolt_rounded, size: 18),
+                        label: const Text('Optimizar rendimiento'),
+                      ),
+                    ),
+                    SizedBox(width: tokens.gapSm),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => ctrl.update((p) => p.copyWith(
+                              blurEnabled: true,
+                              cardBlurEnabled: true,
+                            )),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                        label: const Text('Máxima estética'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: tokens.gap),
           // ---------- Fondo ----------
           _SectionHeader(label: 'Fondo'),
           SizedBox(height: tokens.gapSm),

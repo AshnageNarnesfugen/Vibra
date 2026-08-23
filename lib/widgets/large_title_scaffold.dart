@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'frosted_surface.dart';
 
 import 'package:flutter/material.dart';
 
@@ -157,29 +157,26 @@ class _LargeTitleDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-          // Frosted glass: blur del fondo Y de los elementos bajo la barra.
+          // Frosted glass: gateado por el ajuste de blur + grouped (ver
+          // FrostedBarLayer). Antes hardcodeaba sigma 32 siempre.
           Positioned.fill(
             child: Opacity(
               opacity: t,
-              child: BackdropFilter(
-                // Sigma 32 → difuminado ultra-suave tipo Apple.
-                filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(
-                      // Opacidad base alta para que el cristal se vea denso.
-                      alpha: (0.65 + settings.effectiveSurfaceOpacity * 0.25)
-                          .clamp(0.0, 1.0),
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.06),
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.03),
-                      ],
-                    ),
+              child: FrostedBarLayer(
+                decoration: BoxDecoration(
+                  color: scheme.surface.withValues(
+                    // Opacidad base alta para que el cristal se vea denso.
+                    alpha: (0.65 + settings.effectiveSurfaceOpacity * 0.25)
+                        .clamp(0.0, 1.0),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.06),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.03),
+                    ],
                   ),
                 ),
               ),

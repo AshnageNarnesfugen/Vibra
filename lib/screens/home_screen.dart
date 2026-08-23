@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,7 +6,9 @@ import '../core/animations/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../core/settings/ui_settings.dart';
 import '../widgets/adaptive_color.dart';
+import '../widgets/frosted_surface.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/stable_backdrop_group.dart';
 import 'library_screen.dart';
 import 'settings/settings_screen.dart';
 
@@ -176,7 +177,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                 )
               : null,
-          body: Stack(
+          // BackdropGroup: la barra inferior (y cualquier BackdropFilter
+          // grouped del cuerpo) comparten UN pase de sample en vez de uno
+          // cada uno. Clave para el stutter en gama media al scrollear.
+          body: StableBackdropGroup(
+            child: Stack(
             children: [
               // 1. Cuerpo: IndexedStack con 3 ramas. Las 2 primeras tienen
               // su propio Navigator anidado → álbumes/artistas pusheados
@@ -226,6 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
+          ),
           ),
         );
       }),
@@ -293,31 +299,29 @@ class _FrostedBottomBar extends StatelessWidget {
               ),
             ),
           ),
-          // El filtro de blur real.
+          // El filtro de blur real — gateado por el ajuste del usuario y
+          // compartido con el BackdropGroup del scaffold (ver FrostedBarLayer).
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(
-                    alpha: (0.65 + settings.effectiveSurfaceOpacity * 0.25)
-                        .clamp(0.0, 1.0),
+            child: FrostedBarLayer(
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(
+                  alpha: (0.65 + settings.effectiveSurfaceOpacity * 0.25)
+                      .clamp(0.0, 1.0),
+                ),
+                border: Border(
+                  top: BorderSide(
+                    color: scheme.outlineVariant.withValues(alpha: 0.3),
+                    width: 0.5,
                   ),
-                  border: Border(
-                    top: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.3),
-                      width: 0.5,
-                    ),
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.05),
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.03),
-                    ],
-                  ),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.05),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.03),
+                  ],
                 ),
               ),
             ),
@@ -426,9 +430,7 @@ class _SideMenuDrawer extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-          child: DecoratedBox(
+        child: FrostedBarLayer(
             decoration: BoxDecoration(
               color: scheme.surface.withValues(
                 alpha: (0.62 + settings.effectiveSurfaceOpacity * 0.20)
@@ -500,7 +502,6 @@ class _SideMenuDrawer extends StatelessWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

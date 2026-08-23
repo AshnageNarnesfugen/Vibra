@@ -236,3 +236,55 @@ class _SamplerLayer extends StatelessWidget {
     );
   }
 }
+
+/// Blur para superficies/barras FIJAS que sí blurean el contenido real de
+/// debajo (nav bar, top bar, drawer, popups) — a diferencia de
+/// [FrostedSurface], que samplea el bg pre-renderado y es para scrolleables.
+///
+/// **Optimización móvil**: antes cada barra hardcodeaba `sigma 32` SIEMPRE,
+/// ignorando el ajuste de blur del usuario. En un teléfono de gama media
+/// eso son 2-3 pases de blur full-width extra por frame al scrollear (el
+/// contenido bajo la barra cambia → BackdropFilter re-samplea). Ahora:
+///   - blur OFF → sin BackdropFilter, solo el tinte translúcido: cero
+///     pases de blur, el fondo se sigue viendo a través del alpha.
+///   - blur ON  → sigma derivado de `blurIntensity` acotado (el blur
+///     gaussiano escala con el sigma; 18 se ve casi igual que 32 en una
+///     barra y cuesta bastante menos).
+///   - `BackdropFilter.grouped`: cuando hay varias barras bajo el mismo
+///     [BackdropGroup] (via StableBackdropGroup), comparten UN solo pase
+///     de sample en lugar de uno cada una.
+///
+/// [decoration] es el look frosted (tinte + borde + gradiente) que va
+/// ENCIMA del blur; se pinta igual con blur on u off.
+class FrostedBarLayer extends StatelessWidget {
+  const FrostedBarLayer({
+    super.key,
+    required this.decoration,
+    this.maxSigma = 22,
+    this.child,
+  });
+
+  final Decoration decoration;
+
+  /// Tope del sigma cuando el blur está activo. Las barras no necesitan
+  /// tanto blur como el fondo; 22 es indistinguible de 32 a simple vista.
+  final double maxSigma;
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = UiSettingsScope.of(context);
+    final tinted = DecoratedBox(decoration: decoration, child: child);
+
+    if (!settings.blurEnabled || settings.blurIntensity <= 0) {
+      // Sin blur: el tinte translúcido basta y no cuesta ningún pase GPU.
+      return tinted;
+    }
+    final sigma = settings.blurIntensity.clamp(4.0, maxSigma);
+    return BackdropFilter.grouped(
+      filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: tinted,
+    );
+  }
+}
