@@ -33,6 +33,13 @@ class YtMusicClient {
   /// Se setea desde fuera (StreamingService la sincroniza con SettingsController).
   YtMusicAuth? auth;
 
+  /// PoToken (Proof-of-Origin) cosechado del WebView de login. Google lo
+  /// exige cada vez más para servir streams — sin él, incluso los clients
+  /// ANDROID_VR devuelven `LOGIN_REQUIRED` ("confirma que no eres un bot").
+  /// Cuando está presente se manda en `serviceIntegrityDimensions` del
+  /// player. Puede caducar; el WebView lo re-cosecha en cada login.
+  String? poToken;
+
   /// Callback opcional para refrescar el OAuth access_token cuando expira.
   /// Lo registra el `StreamingService` apuntando a `YtOauthService.refresh`
   /// + actualización de settings. Si retorna un nuevo [YtMusicAuth], el
@@ -90,6 +97,9 @@ class YtMusicClient {
   // ese momento. Los con `loginSupported: false` no envían cookie/auth —
   // bypassean varias restricciones (age-gate, geo-block) por ser "fresh
   // visitor" desde el punto de vista del server.
+  // IOS / IOS_MUSIC: SIN auth. Google trata a estos clients como visitante
+  // puro y NO acepta la cookie de sesión — mandarla provoca errores. Van en
+  // el grupo anónimo de la cascada (igual que OpenTune 2026).
   static const _ios = _ClientSpec(
     clientName: 'IOS',
     clientVersion: '19.29.1',
@@ -97,6 +107,7 @@ class YtMusicClient {
     userAgent: 'com.google.ios.youtube/19.29.1 '
         '(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
     osVersion: '17.5.1.21F90',
+    loginSupported: false,
   );
 
   static const _iosMusic = _ClientSpec(
@@ -107,6 +118,7 @@ class YtMusicClient {
         '(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
     osName: 'iOS',
     osVersion: '17.5.1.21F90',
+    loginSupported: false,
   );
 
   static const _android = _ClientSpec(
@@ -185,18 +197,19 @@ class YtMusicClient {
         'Safari/605.1.15',
   );
 
-  /// Orden de cascada para extracción de stream (reordenado 2026 tras el
-  /// endurecimiento de Google).
+  /// Orden BASE de cascada para extracción de stream, usado tal cual cuando
+  /// NO hay sesión. Cuando el usuario está logueado, [orderedPlayerClients]
+  /// reordena esto poniendo los clients que autentican primero — ver ahí el
+  /// porqué. Reordenado 2026 tras el endurecimiento de Google.
   ///
-  /// Los ANDROID_VR SIN AUTH van PRIMERO: son los únicos que Google sigue
-  /// sirviendo sin PoToken (Proof-of-Origin) y devuelven URL directa (sin
-  /// `signatureCipher` que habría que descifrar con el player JS). Google
-  /// rota qué versión VR acepta, así que probamos tres (1.61 → 1.43 →
-  /// 1.37). Los mobile clients (IOS/ANDROID/…) quedan como fallback:
-  /// funcionan a ratos pero cada vez más piden PoToken → dan
-  /// `Status Error`. tvEmbedded se sacó de la cascada — ahora exige
-  /// login+PoToken y solo aportaba el "Status Error con tvEmbedded" del
-  /// final.
+  /// Como INVITADO, los ANDROID_VR SIN AUTH van primero: son los únicos que
+  /// Google sigue sirviendo sin PoToken (Proof-of-Origin) y devuelven URL
+  /// directa (sin `signatureCipher` que habría que descifrar con el player
+  /// JS). Google rota qué versión VR acepta, así que probamos tres (1.61 →
+  /// 1.43 → 1.37). Los mobile clients (IOS/ANDROID/…) quedan como fallback:
+  /// funcionan a ratos pero cada vez más piden PoToken → dan `Status Error`.
+  /// tvEmbedded se sacó de la cascada — ahora exige login+PoToken y solo
+  /// aportaba el "Status Error con tvEmbedded" del final.
   static const playerClientsCascade = <PlayerClientId>[
     PlayerClientId.androidVr, // 1.61.48
     PlayerClientId.androidVr43, // 1.43.32
@@ -232,24 +245,46 @@ class YtMusicClient {
     );
   }
 
-  /// Obtiene los streamingData de un videoId con el cliente dado (o IOS_MUSIC
-  /// por defecto — el primero de la cascada, el más fiable para URLs directas
-  /// sin cipher).
+  /// Orden de la cascada de clients ADAPTADO a la sesión. Cuando hay
+  /// sesión (cookie completa o Bearer OAuth vigente), los clients que mandan
+  /// la cookie (loginSupported) van PRIMERO: se autentican y pasan el
+  /// bot-check de Google. Sin sesión, los ANDROID_VR anónimos van primero
+  /// (funcionan como visitante limpio). Mismo criterio que OpenTune 2026.
+  List<PlayerClientId> orderedPlayerClients() {
+    final loggedIn = (auth?.isCompleteCookieSession ?? false) ||
+        (auth?.hasValidBearer ?? false);
+    if (!loggedIn) return playerClientsCascade;
+    final login = <PlayerClientId>[];
+    final noLogin = <PlayerClientId>[];
+    for (final id in playerClientsCascade) {
+      (_resolve(id).loginSupported ? login : noLogin).add(id);
+    }
+    return [...login, ...noLogin];
+  }
+
+  /// Obtiene los streamingData de un videoId con el cliente dado. Inyecta el
+  /// PoToken (si lo hay) en el body y en la URL para pasar el bot-gate.
   Future<Map<String, dynamic>> player(
     String videoId, {
     PlayerClientId clientId = PlayerClientId.iosMusic,
   }) async {
+    final body = <String, dynamic>{
+      'videoId': videoId,
+      'playbackContext': {
+        'contentPlaybackContext': {
+          'html5Preference': 'HTML5_PREF_WANTS',
+        },
+      },
+    };
+    // PoToken: Google lo pide para servir el stream sin `LOGIN_REQUIRED`.
+    final pot = poToken;
+    if (pot != null && pot.isNotEmpty) {
+      body['serviceIntegrityDimensions'] = {'poToken': pot};
+    }
     return _post(
       endpoint: 'player',
       client: _resolve(clientId),
-      body: {
-        'videoId': videoId,
-        'playbackContext': {
-          'contentPlaybackContext': {
-            'html5Preference': 'HTML5_PREF_WANTS',
-          },
-        },
-      },
+      body: body,
     );
   }
 
@@ -474,8 +509,15 @@ class YtMusicClient {
     // HTML de music.youtube.com en cada `fetchSessionIds` para no
     // depender de una hardcoded vieja. Si la primera request falla
     // antes del primer refresh, usamos el fallback inicial.
+    // El PoToken va TAMBIÉN como query param `pot` en el endpoint `player`
+    // (además de en el body). OpenTune manda ambos: algunos frontends de
+    // Google lo leen de la URL y otros del body.
+    final potParam = (endpoint == 'player' && poToken != null &&
+            poToken!.isNotEmpty)
+        ? '&pot=${Uri.encodeQueryComponent(poToken!)}'
+        : '';
     final uri = Uri.parse(
-      '$_baseUrl/$endpoint?alt=json&key=$_innertubeApiKey',
+      '$_baseUrl/$endpoint?alt=json&key=$_innertubeApiKey$potParam',
     );
 
     // Inyectamos `visitorData` en el contexto si lo tenemos guardado: cuando

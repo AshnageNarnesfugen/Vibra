@@ -55,6 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
       result.cookie,
       visitorData: result.visitorData,
       dataSyncId: result.dataSyncId,
+      poToken: result.poToken,
     );
   }
 
@@ -123,6 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
     String cookie, {
     String? visitorData,
     String? dataSyncId,
+    String? poToken,
   }) async {
     setState(() {
       _busy = true;
@@ -174,10 +176,17 @@ class _LoginScreenState extends State<LoginScreen> {
         dataSyncId: ds,
       ));
 
+      // PoToken cosechado del WebView: lo inyectamos en el cliente ya, para
+      // que el primer stream tras el login pase el bot-check de Google.
+      if (poToken != null && poToken.isNotEmpty) {
+        svc.poToken = poToken;
+      }
+
       settingsCtrl.update((s) => s.copyWith(
             ytMusicCookie: cookie,
             ytMusicVisitorData: vd,
             ytMusicDataSyncId: ds,
+            ytMusicPoToken: poToken,
           ));
 
       if (!mounted) return;
@@ -434,11 +443,13 @@ class _WebViewLoginResult {
     required this.cookie,
     this.visitorData,
     this.dataSyncId,
+    this.poToken,
   });
 
   final String cookie;
   final String? visitorData;
   final String? dataSyncId;
+  final String? poToken;
 }
 
 /// Pantalla embebida con el login web de Google — port fiel del
@@ -479,6 +490,7 @@ class _WebViewLoginState extends State<_WebViewLogin> {
   bool _onYouTube = false;
   String? _visitorData;
   String? _dataSyncId;
+  String? _poToken;
 
   @override
   void initState() {
@@ -587,6 +599,11 @@ class _WebViewLoginState extends State<_WebViewLogin> {
       if (cut >= 0) ds = ds.substring(0, cut);
       if (ds.isNotEmpty) _dataSyncId = ds;
     }
+    // PoToken (Proof-of-Origin): la página logueada lo expone en el ytcfg.
+    // Google lo pide en el endpoint `player` para servir el stream — sin él,
+    // incluso una sesión válida recibe `LOGIN_REQUIRED`. Igual que OpenTune.
+    final pot = await eval('PO_TOKEN');
+    if (pot != null && pot.isNotEmpty) _poToken = pot;
   }
 
   /// Fusión de cookies de los tres dominios de YouTube, calcada del
@@ -649,12 +666,14 @@ class _WebViewLoginState extends State<_WebViewLogin> {
       } catch (_) {}
       devLog('[YTM] webview cookie capturada (len=${cookie.length}, '
           'visitorData=${_visitorData != null ? "sí" : "no"}, '
-          'dataSyncId=${_dataSyncId != null ? "sí" : "no"})');
+          'dataSyncId=${_dataSyncId != null ? "sí" : "no"}, '
+          'poToken=${_poToken != null ? "sí" : "no"})');
       if (!mounted) return;
       Navigator.of(context).pop(_WebViewLoginResult(
         cookie: cookie,
         visitorData: _visitorData,
         dataSyncId: _dataSyncId,
+        poToken: _poToken,
       ));
     } catch (e) {
       devLog('[YTM] capture cookies error: $e');

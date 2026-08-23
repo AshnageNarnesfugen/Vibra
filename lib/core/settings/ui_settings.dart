@@ -259,6 +259,7 @@ class UiSettings {
     this.ytMusicAccessToken,
     this.ytMusicRefreshToken,
     this.ytMusicAccessTokenExpiryEpochMs,
+    this.ytMusicPoToken,
   });
 
   final BackgroundMode backgroundMode;
@@ -537,6 +538,13 @@ class UiSettings {
   /// antes de hacer la request.
   final int? ytMusicAccessTokenExpiryEpochMs;
 
+  /// PoToken (Proof-of-Origin Token) cosechado del WebView de login
+  /// (`window.ytcfg.get('PO_TOKEN')`). Google lo exige cada vez más para
+  /// servir el stream: sin él, incluso una sesión válida recibe
+  /// `LOGIN_REQUIRED` en el endpoint `player`. Se envía en el body como
+  /// `serviceIntegrityDimensions.poToken`.
+  final String? ytMusicPoToken;
+
   UiSettings copyWith({
     CoverShape? coverShape,
     double? holoTiltIntensity,
@@ -605,6 +613,7 @@ class UiSettings {
     String? ytMusicAccessToken,
     String? ytMusicRefreshToken,
     int? ytMusicAccessTokenExpiryEpochMs,
+    String? ytMusicPoToken,
     bool clearYtMusicAuth = false,
   }) {
     return UiSettings(
@@ -708,6 +717,9 @@ class UiSettings {
           ? null
           : (ytMusicAccessTokenExpiryEpochMs ??
               this.ytMusicAccessTokenExpiryEpochMs),
+      ytMusicPoToken: clearYtMusicAuth
+          ? null
+          : (ytMusicPoToken ?? this.ytMusicPoToken),
     );
   }
 
@@ -774,6 +786,7 @@ class UiSettings {
         'ytMusicRefreshToken': ytMusicRefreshToken,
         'ytMusicAccessTokenExpiryEpochMs':
             ytMusicAccessTokenExpiryEpochMs,
+        'ytMusicPoToken': ytMusicPoToken,
       });
 
   factory UiSettings.fromJson(String raw) {
@@ -898,6 +911,7 @@ class UiSettings {
       ytMusicRefreshToken: m['ytMusicRefreshToken'] as String?,
       ytMusicAccessTokenExpiryEpochMs:
           (m['ytMusicAccessTokenExpiryEpochMs'] as num?)?.toInt(),
+      ytMusicPoToken: m['ytMusicPoToken'] as String?,
     );
   }
 

@@ -169,6 +169,10 @@ Future<void> main() async {
   // de TV contra music.youtube.com a fines de 2024 (mismo issue que
   // ytmusicapi) — los tokens guardados por versiones viejas se ignoran
   // aquí y la pantalla de cuenta ofrece limpiarlos.
+  // PoToken persistido del último login por WebView. Google lo exige para
+  // servir streams sin `LOGIN_REQUIRED`; lo re-inyectamos al arrancar.
+  streaming.poToken = settings.value.ytMusicPoToken;
+
   final savedCookie = settings.value.ytMusicCookie;
   if (savedCookie != null) {
     streaming.setAuth(YtMusicAuth(

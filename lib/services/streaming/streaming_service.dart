@@ -176,8 +176,22 @@ class StreamingService {
 
   void clearAuth() {
     _client.auth = null;
+    // El PoToken está ligado a la sesión — al cerrarla deja de ser válido.
+    _client.poToken = null;
     _streamCache.clear();
   }
+
+  /// PoToken (Proof-of-Origin) cosechado del WebView de login. Google lo
+  /// exige cada vez más para servir el stream sin `LOGIN_REQUIRED`. Se
+  /// persiste en settings y se re-inyecta al arrancar.
+  set poToken(String? token) {
+    _client.poToken = token;
+    // Un PoToken nuevo puede desbloquear streams que antes fallaban →
+    // invalidamos el cache para forzar re-resolución.
+    _streamCache.clear();
+  }
+
+  String? get poToken => _client.poToken;
 
   Future<String?> fetchVisitorData() => _client.fetchVisitorData();
 
@@ -1528,10 +1542,10 @@ class StreamingService {
     }
 
     final errors = <String>[];
-    // Cascada de clientes (reordenada 2026): ANDROID_VR sin auth primero —
-    // los únicos que Google sirve sin PoToken y con URL directa. Ver
-    // YtMusicClient.playerClientsCascade para el razonamiento.
-    final clients = YtMusicClient.playerClientsCascade;
+    // Cascada adaptada a la sesión: si hay cookie completa, los clients que
+    // se autentican van primero (pasan el bot-check de Google); sin sesión,
+    // los ANDROID_VR anónimos primero. Ver YtMusicClient.orderedPlayerClients.
+    final clients = _client.orderedPlayerClients();
 
     for (final clientId in clients) {
       try {
@@ -1616,7 +1630,7 @@ class StreamingService {
       'MUSIC_VIDEO_TYPE_UGC',
       'MUSIC_VIDEO_TYPE_OFFICIAL_SOURCE_MUSIC',
     };
-    final clients = YtMusicClient.playerClientsCascade;
+    final clients = _client.orderedPlayerClients();
     for (final clientId in clients) {
       try {
         final json = await _client.player(videoId, clientId: clientId);
