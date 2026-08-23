@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -599,11 +600,49 @@ class _WebViewLoginState extends State<_WebViewLogin> {
       if (cut >= 0) ds = ds.substring(0, cut);
       if (ds.isNotEmpty) _dataSyncId = ds;
     }
-    // PoToken (Proof-of-Origin): la página logueada lo expone en el ytcfg.
-    // Google lo pide en el endpoint `player` para servir el stream — sin él,
-    // incluso una sesión válida recibe `LOGIN_REQUIRED`. Igual que OpenTune.
-    final pot = await eval('PO_TOKEN');
+    // PoToken (Proof-of-Origin): la página logueada lo expone. Google lo pide
+    // en el endpoint `player` para servir el stream — sin él, incluso una
+    // sesión válida recibe `LOGIN_REQUIRED`. Igual que OpenTune, probamos:
+    //   1. window.ytcfg.get('PO_TOKEN') / yt.config_
+    //   2. Fallback: regex sobre los <script> buscando "PO_TOKEN":"..."
+    //      (el ytcfg.get suele venir vacío y el token vive en un script).
+    var pot = await eval('PO_TOKEN');
+    if (pot == null || pot.isEmpty) {
+      pot = await _harvestPoTokenFromScripts();
+    }
     if (pot != null && pot.isNotEmpty) _poToken = pot;
+  }
+
+  /// Fallback de PoToken: escanea los `<script>` de la página buscando
+  /// `"PO_TOKEN":"..."`. Port del que usa OpenTune en LoginScreen.kt.
+  Future<String?> _harvestPoTokenFromScripts() async {
+    try {
+      final raw = await _controller.runJavaScriptReturningResult(
+        "(function(){try{"
+        "var s=document.querySelectorAll('script');"
+        "for(var i=0;i<s.length;i++){"
+        "var m=s[i].textContent.match(/\"PO_TOKEN\":\"([^\"]+)\"/);"
+        "if(m)return m[1];}"
+        "return ''}catch(e){return ''}})()",
+      );
+      var s = raw is String ? raw : raw.toString();
+      if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+        s = s.substring(1, s.length - 1);
+      }
+      if (s.isEmpty || s == 'null') return null;
+      // El token en el <script> viene con secuencias JSON escapadas (los '='
+      // de padding y las '/' como \uXXXX o \/). Dejamos que jsonDecode
+      // desescape todo tratándolo como una cadena JSON — así el `pot=` de la
+      // URL y el body llevan el valor real. Si el contenido rompe el parseo,
+      // caemos al valor crudo.
+      try {
+        final decoded = jsonDecode('"$s"');
+        if (decoded is String && decoded.isNotEmpty) return decoded;
+      } catch (_) {}
+      return s;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Fusión de cookies de los tres dominios de YouTube, calcada del
@@ -657,6 +696,13 @@ class _WebViewLoginState extends State<_WebViewLogin> {
       // manual basta SAPISID: _commit reporta exactamente qué falta.
       final ready = manual ? auth.isUsable : auth.isCompleteCookieSession;
       if (!ready) return;
+
+      // Último intento de cosechar el PoToken antes de cerrar: la cookie
+      // puede completarse antes de que el ytcfg exponga el token. Sin él, el
+      // endpoint player devuelve LOGIN_REQUIRED aunque la sesión sea válida.
+      if (_poToken == null) {
+        await _harvestSessionIds();
+      }
 
       _completed = true;
       // Persistir cookies del WebView a disco antes de salir — un login

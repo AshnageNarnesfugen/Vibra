@@ -268,10 +268,17 @@ class YtMusicClient {
 
   /// Obtiene los streamingData de un videoId con el cliente dado. Inyecta el
   /// PoToken (si lo hay) en el body y en la URL para pasar el bot-gate.
+  ///
+  /// Retry sin `onBehalfOfUser`: algunos clients (ANDROID_MUSIC, IOS…)
+  /// devuelven `400 INVALID_ARGUMENT` cuando les mandamos el dataSyncId. Si
+  /// pasa, reintentamos el MISMO client sin él — así el usuario logueado no
+  /// se queda sin stream. Calcado de OpenTune
+  /// (`shouldRetryPlayerRequestWithoutDataSyncId`).
   Future<Map<String, dynamic>> player(
     String videoId, {
     PlayerClientId clientId = PlayerClientId.iosMusic,
   }) async {
+    final spec = _resolve(clientId);
     final body = <String, dynamic>{
       'videoId': videoId,
       'playbackContext': {
@@ -285,11 +292,34 @@ class YtMusicClient {
     if (pot != null && pot.isNotEmpty) {
       body['serviceIntegrityDimensions'] = {'poToken': pot};
     }
-    return _post(
-      endpoint: 'player',
-      client: _resolve(clientId),
-      body: body,
-    );
+
+    // ¿Este request llevará onBehalfOfUser? Solo si hay cookie completa y el
+    // client autentica. Si no, ni tiene sentido el retry.
+    final wouldSendDsi = spec.loginSupported &&
+        (auth?.dataSyncId?.isNotEmpty ?? false) &&
+        (auth?.isCompleteCookieSession ?? false) &&
+        !(auth?.hasValidBearer ?? false);
+
+    try {
+      return await _post(endpoint: 'player', client: spec, body: body);
+    } on HttpException catch (e) {
+      final msg = e.message.toLowerCase();
+      final isInvalidArg = msg.contains('http 400') &&
+          (msg.contains('invalid argument') ||
+              msg.contains('invalid_argument') ||
+              msg.contains('precondition'));
+      if (wouldSendDsi && isInvalidArg) {
+        devLog('[YTM] player ${spec.clientName} 400 con onBehalfOfUser — '
+            'reintentando sin dataSyncId');
+        return _post(
+          endpoint: 'player',
+          client: spec,
+          body: body,
+          includeOnBehalfOfUser: false,
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Sugerencias de búsqueda (autocomplete).
@@ -465,6 +495,11 @@ class YtMusicClient {
     required String endpoint,
     required _ClientSpec client,
     required Map<String, dynamic> body,
+    // Cuando es false NO mandamos `user.onBehalfOfUser` (dataSyncId). Se usa
+    // para el retry del endpoint `player`: algunos clients (ANDROID_MUSIC…)
+    // devuelven 400 INVALID_ARGUMENT si les llega onBehalfOfUser — reintentar
+    // sin él lo resuelve (mismo patrón que OpenTune).
+    bool includeOnBehalfOfUser = true,
   }) async {
     // Auto-refresh del OAuth access_token: si el token expiró (o expira
     // dentro de 60s) pero tenemos refresh_token, refrescamos AHORA antes
@@ -560,7 +595,8 @@ class YtMusicClient {
     final dsi = auth?.dataSyncId;
     final useCookieAuth = (auth?.isCompleteCookieSession ?? false) &&
         !(auth?.hasValidBearer ?? false);
-    if (client.loginSupported &&
+    if (includeOnBehalfOfUser &&
+        client.loginSupported &&
         dsi != null &&
         dsi.isNotEmpty &&
         useCookieAuth) {
