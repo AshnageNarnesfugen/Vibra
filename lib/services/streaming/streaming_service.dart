@@ -1612,6 +1612,44 @@ class StreamingService {
     );
   }
 
+  /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
+  /// cascada para [videoId] y devuelve un reporte legible con el
+  /// playabilityStatus, número de formatos, si hay URL directa y el error
+  /// completo (sin truncar por SnackBar). Pensado para copiar/pegar cuando
+  /// la reproducción falla — muestra exactamente qué responde YouTube a la
+  /// sesión REAL del usuario, que es lo único que no se puede reproducir
+  /// desde fuera de la app.
+  Future<String> diagnosePlayer(String videoId) async {
+    final a = _client.auth;
+    final buf = StringBuffer()
+      ..writeln('Diagnóstico player · video=$videoId')
+      ..writeln('login=${a?.isCompleteCookieSession ?? false ? "completo" : (a?.isUsable ?? false ? "parcial" : "no")} '
+          'poToken=${(_client.poToken?.isNotEmpty ?? false) ? "sí" : "no"} '
+          'visitorData=${(a?.visitorData?.isNotEmpty ?? false) ? "sí" : "no"} '
+          'dataSyncId=${(a?.dataSyncId?.isNotEmpty ?? false) ? "sí" : "no"}')
+      ..writeln('─────────');
+    for (final clientId in _client.orderedPlayerClients()) {
+      try {
+        final json = await _client.player(videoId, clientId: clientId);
+        final status = _at(json, ['playabilityStatus', 'status']);
+        final reason = _at(json, ['playabilityStatus', 'reason']);
+        final adaptive = _at(json, ['streamingData', 'adaptiveFormats']);
+        final formats = _at(json, ['streamingData', 'formats']);
+        final all = <dynamic>[
+          if (adaptive is List) ...adaptive,
+          if (formats is List) ...formats,
+        ];
+        final direct = all.where((f) => f is Map && f['url'] != null).length;
+        buf.writeln('${clientId.name}: status=$status'
+            '${reason != null ? ' ($reason)' : ''} '
+            'formatos=${all.length} directos=$direct');
+      } catch (e) {
+        buf.writeln('${clientId.name}: ERROR $e');
+      }
+    }
+    return buf.toString();
+  }
+
   /// Resuelve la URL de un FORMATO DE VIDEO del videoId — para usar como
   /// fondo dinámico (música video).
   ///

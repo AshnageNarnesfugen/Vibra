@@ -9,6 +9,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../core/settings/settings_controller.dart';
 import '../core/theme/layout_tokens.dart';
+import '../providers/playback_controller.dart';
 import '../services/streaming/streaming_service.dart';
 import '../services/streaming/yt_auth.dart';
 import '../widgets/glass_card.dart';
@@ -218,6 +219,101 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.of(context).pop(false);
   }
 
+  /// Corre el diagnóstico del endpoint `player` con la sesión real y muestra
+  /// la respuesta cruda cliente por cliente. Precarga el videoId de la
+  /// canción actual si hay una sonando; si no, el usuario lo pega.
+  Future<void> _runPlaybackDiagnostic() async {
+    final svc = context.read<StreamingService>();
+    final current = context.read<PlaybackController>().currentSong;
+    final controller = TextEditingController(
+      text: current?.streamingId ?? '',
+    );
+    final videoId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Diagnóstico de reproducción'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Prueba el endpoint player con tu sesión real y muestra qué '
+              'responde YouTube cliente por cliente. Pega el ID del video '
+              'que falla (los 11 caracteres tras "?v=") o usa el de la '
+              'canción actual.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'p.ej. Z8axuLJOu2I',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Ejecutar'),
+          ),
+        ],
+      ),
+    );
+    if (videoId == null || videoId.isEmpty || !mounted) return;
+
+    setState(() => _busy = true);
+    String report;
+    try {
+      report = await svc.diagnosePlayer(videoId);
+    } catch (e) {
+      report = 'Error inesperado: $e';
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    final messenger = ScaffoldMessenger.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Resultado del diagnóstico'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              report,
+              style: const TextStyle(fontSize: 12, height: 1.4),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copiar'),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: report));
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+              messenger.showSnackBar(const SnackBar(
+                content: Text('Diagnóstico copiado'),
+                duration: Duration(seconds: 2),
+              ));
+            },
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = LayoutTokensScope.of(context);
@@ -386,12 +482,22 @@ class _LoginScreenState extends State<LoginScreen> {
             // El flujo OAuth (Device Code) se retiró: Google lo cerró
             // contra music.youtube.com a fines de 2024 — solo quedan
             // WebView (recomendado) y paste de cookie.
-          ] else
+          ] else ...[
             OutlinedButton.icon(
               onPressed: _busy ? null : _logout,
               icon: const Icon(Icons.logout_rounded),
               label: const Text('Cerrar sesión'),
             ),
+            SizedBox(height: tokens.gapSm),
+            // Diagnóstico: corre el endpoint player con la sesión REAL y
+            // muestra qué responde YouTube cliente por cliente. Es la única
+            // forma de ver el path autenticado (no reproducible desde fuera).
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _runPlaybackDiagnostic,
+              icon: const Icon(Icons.troubleshoot_rounded),
+              label: const Text('Diagnóstico de reproducción'),
+            ),
+          ],
           if (_busy) ...[
             SizedBox(height: tokens.gap),
             const Center(child: CircularProgressIndicator()),

@@ -656,7 +656,7 @@ class YtMusicClient {
       if (res.statusCode != 200) {
         throw HttpException(
           'YT Music $endpoint → HTTP ${res.statusCode}: '
-          '${_truncate(res.body, 200)}',
+          '${_truncate(res.body, 500)}',
         );
       }
       return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
