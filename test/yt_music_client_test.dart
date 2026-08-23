@@ -16,6 +16,16 @@ void main() {
       );
     });
 
+    test('el cliente ANDROID plano NO está en la cascada (daba HTTP 400)', () {
+      // YouTube dejó de servir el endpoint player al ANDROID plano sin
+      // params especiales. Se sacó de la cascada para no romper la
+      // reproducción con un 400 al inicio.
+      expect(
+        YtMusicClient.playerClientsCascade,
+        isNot(contains(PlayerClientId.android)),
+      );
+    });
+
     test('con cookie completa, los clients que autentican van PRIMERO', () {
       final c = YtMusicClient()
         ..auth = const YtMusicAuth(
@@ -25,11 +35,11 @@ void main() {
 
       // El primero ya no puede ser un VR sin auth: con sesión activa esos
       // reciben cookie que no soportan → ERROR / LOGIN_REQUIRED. Deben ir
-      // primero los loginSupported (ANDROID, ANDROID_MUSIC).
+      // primero los loginSupported (IOS, ANDROID_MUSIC).
       expect(ordered.first, isNot(PlayerClientId.androidVr));
       expect(
         ordered.first,
-        anyOf(PlayerClientId.android, PlayerClientId.androidMusic),
+        anyOf(PlayerClientId.ios, PlayerClientId.androidMusic),
       );
 
       // Ningún client se pierde ni se duplica en el reordenamiento.
@@ -57,12 +67,12 @@ void main() {
   });
 }
 
-// Los VR y los iOS van como visitante puro (loginSupported=false).
+// Los VR y IOS_MUSIC van como visitante puro (loginSupported=false).
+// IOS sí autentica, así que NO es anónimo.
 bool _isAnonymous(PlayerClientId id) => switch (id) {
       PlayerClientId.androidVr ||
       PlayerClientId.androidVr43 ||
       PlayerClientId.androidVrNoAuth ||
-      PlayerClientId.ios ||
       PlayerClientId.iosMusic =>
         true,
       _ => false,

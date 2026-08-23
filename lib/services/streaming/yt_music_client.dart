@@ -97,9 +97,9 @@ class YtMusicClient {
   // ese momento. Los con `loginSupported: false` no envían cookie/auth —
   // bypassean varias restricciones (age-gate, geo-block) por ser "fresh
   // visitor" desde el punto de vista del server.
-  // IOS / IOS_MUSIC: SIN auth. Google trata a estos clients como visitante
-  // puro y NO acepta la cookie de sesión — mandarla provoca errores. Van en
-  // el grupo anónimo de la cascada (igual que OpenTune 2026).
+  // IOS: SÍ autentica (loginSupported=true, igual que OpenTune). Devuelve
+  // URLs directas sin `signatureCipher` — ideal para nosotros que no
+  // desciframos. Con sesión activa va primero en la cascada.
   static const _ios = _ClientSpec(
     clientName: 'IOS',
     clientVersion: '19.29.1',
@@ -107,9 +107,10 @@ class YtMusicClient {
     userAgent: 'com.google.ios.youtube/19.29.1 '
         '(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
     osVersion: '17.5.1.21F90',
-    loginSupported: false,
   );
 
+  // IOS_MUSIC: SIN auth (loginSupported=false, igual que OpenTune). Google
+  // no acepta su cookie — va en el grupo anónimo, como fallback.
   static const _iosMusic = _ClientSpec(
     clientName: 'IOS_MUSIC',
     clientVersion: '7.27.0',
@@ -215,10 +216,13 @@ class YtMusicClient {
     PlayerClientId.androidVr43, // 1.43.32
     PlayerClientId.androidVrNoAuth, // 1.37
     PlayerClientId.ios,
-    PlayerClientId.android,
     PlayerClientId.androidMusic,
     PlayerClientId.iosMusic,
   ];
+  // NOTA: el cliente ANDROID plano (com.google.android.youtube) se sacó de
+  // la cascada — YouTube dejó de servirle el endpoint `player` sin params
+  // especiales y devuelve HTTP 400. OpenTune tampoco lo usa para streaming.
+  // El enum/spec se conservan por si se necesita en otro endpoint.
 
   _ClientSpec _resolve(PlayerClientId id) => switch (id) {
         PlayerClientId.ios => _ios,
