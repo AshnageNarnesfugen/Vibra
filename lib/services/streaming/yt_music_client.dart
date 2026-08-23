@@ -119,6 +119,8 @@ class YtMusicClient {
         '(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
     osName: 'iOS',
     osVersion: '17.5.1.21F90',
+    deviceMake: 'Apple',
+    deviceModel: 'iPhone16,2',
     loginSupported: false,
   );
 
@@ -146,6 +148,9 @@ class YtMusicClient {
         'Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)',
     osName: 'Android',
     osVersion: '12',
+    deviceMake: 'Oculus',
+    deviceModel: 'Quest 3',
+    androidSdkVersion: '32',
     loginSupported: false,
   );
 
@@ -161,6 +166,9 @@ class YtMusicClient {
         'Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)',
     osName: 'Android',
     osVersion: '12',
+    deviceMake: 'Oculus',
+    deviceModel: 'Quest 3',
+    androidSdkVersion: '32',
     loginSupported: false,
   );
 
@@ -175,6 +183,9 @@ class YtMusicClient {
         'Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)',
     osName: 'Android',
     osVersion: '12',
+    deviceMake: 'Oculus',
+    deviceModel: 'Quest 3',
+    androidSdkVersion: '32',
     loginSupported: false,
   );
 
@@ -184,9 +195,12 @@ class YtMusicClient {
     clientId: '21',
     userAgent: 'com.google.android.apps.youtube.music/7.27.52 '
         '(Linux; U; Android 15; en_US; Pixel 9 Pro; '
-        'Build/AP4A.250205.002) gzip',
+        'Build/AP4A.250205.002; Cronet/132.0.6834.79) gzip',
     osName: 'Android',
     osVersion: '15',
+    deviceMake: 'Google',
+    deviceModel: 'Pixel 9 Pro',
+    androidSdkVersion: '35',
   );
 
   static const _tvEmbedded = _ClientSpec(
@@ -279,13 +293,15 @@ class YtMusicClient {
     PlayerClientId clientId = PlayerClientId.iosMusic,
   }) async {
     final spec = _resolve(clientId);
+    // Body mínimo, como OpenTune para clientes móviles: `videoId` + context
+    // (+ serviceIntegrityDimensions si hay PoToken). NO mandamos
+    // `playbackContext.contentPlaybackContext.html5Preference`: es un campo
+    // del player WEB y los clientes ANDROID_MUSIC / IOS lo rechazan con 400
+    // "invalid argument" / "precondition check failed". El único
+    // contentPlaybackContext válido para estos sería `signatureTimestamp`,
+    // que solo aplica a WEB (que no usamos porque devuelve URLs cifradas).
     final body = <String, dynamic>{
       'videoId': videoId,
-      'playbackContext': {
-        'contentPlaybackContext': {
-          'html5Preference': 'HTML5_PREF_WANTS',
-        },
-      },
     };
     // PoToken: Google lo pide para servir el stream sin `LOGIN_REQUIRED`.
     final pot = poToken;
@@ -764,6 +780,9 @@ class _ClientSpec {
     required this.userAgent,
     this.osName,
     this.osVersion,
+    this.deviceMake,
+    this.deviceModel,
+    this.androidSdkVersion,
     this.loginSupported = true,
   });
 
@@ -773,6 +792,14 @@ class _ClientSpec {
   final String userAgent;
   final String? osName;
   final String? osVersion;
+
+  /// Fabricante / modelo / SDK del dispositivo. **Obligatorios para los
+  /// clientes ANDROID** (ANDROID_MUSIC, ANDROID_VR): sin `androidSdkVersion`
+  /// el endpoint `player` responde 400 "invalid argument". OpenTune los manda
+  /// siempre para esta familia.
+  final String? deviceMake;
+  final String? deviceModel;
+  final String? androidSdkVersion;
 
   /// `false` para clients tipo `ANDROID_VR_NO_AUTH` que deben ir como
   /// visitante. Sin esto, mandar cookie+SAPISIDHASH a esos clients los
@@ -800,6 +827,14 @@ class _ClientSpec {
           'hl': 'en',
           if (osName != null) 'osName': osName,
           if (osVersion != null) 'osVersion': osVersion,
+          if (deviceMake != null) 'deviceMake': deviceMake,
+          if (deviceModel != null) 'deviceModel': deviceModel,
+          if (androidSdkVersion != null) 'androidSdkVersion': androidSdkVersion,
+        },
+        // `request` como lo manda OpenTune — algunos endpoints lo esperan.
+        'request': <String, dynamic>{
+          'internalExperimentFlags': <dynamic>[],
+          'useSsl': true,
         },
         // Tipo explícito Map<String, dynamic>: sin esto Dart lo infería como
         // Map<String, bool> (solo había un campo bool) y al inyectar
@@ -821,6 +856,9 @@ class _ClientSpec {
         userAgent: userAgent,
         osName: osName,
         osVersion: osVersion,
+        deviceMake: deviceMake,
+        deviceModel: deviceModel,
+        androidSdkVersion: androidSdkVersion,
         loginSupported: loginSupported,
       );
 }
