@@ -684,8 +684,9 @@ class PlaybackController extends ChangeNotifier {
           _pullingRecs = false;
           await Future<void>.delayed(const Duration(seconds: 3));
           if (currentSong?.streamingId == videoId) {
-            return _autoExpandQueueWithRecs(videoId,
+            await _autoExpandQueueWithRecs(videoId,
                 retriesLeft: retriesLeft - 1);
+            return;
           }
         }
         return;

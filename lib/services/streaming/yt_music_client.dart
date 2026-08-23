@@ -52,7 +52,7 @@ class YtMusicClient {
   // la extracción falla.
   static _ClientSpec _webMusic = const _ClientSpec(
     clientName: 'WEB_REMIX',
-    clientVersion: '1.20250101.01.00',
+    clientVersion: '1.20260114.01.00',
     clientId: '67',
     userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -120,7 +120,10 @@ class YtMusicClient {
     osVersion: '15',
   );
 
-  /// VR con auth — útil cuando el video requiere sesión.
+  /// VR 1.61.48 SIN auth. Como los otros VR, va como visitante puro — así
+  /// Google lo sirve sin PoToken. Antes heredaba loginSupported:true por
+  /// defecto: con sesión activa se le mandaba cookie+SAPISIDHASH y el
+  /// server lo rechazaba con ERROR (justo el síntoma "estando logueado").
   static const _androidVr = _ClientSpec(
     clientName: 'ANDROID_VR',
     clientVersion: '1.61.48',
@@ -130,6 +133,7 @@ class YtMusicClient {
         'Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)',
     osName: 'Android',
     osVersion: '12',
+    loginSupported: false,
   );
 
   /// VR sin auth — bypassea age-gate y region-block en muchos videos
@@ -140,6 +144,20 @@ class YtMusicClient {
     clientVersion: '1.37',
     clientId: '28',
     userAgent: 'com.google.android.apps.youtube.vr.oculus/1.37 '
+        '(Linux; U; Android 12; en_US; Quest 3; '
+        'Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)',
+    osName: 'Android',
+    osVersion: '12',
+    loginSupported: false,
+  );
+
+  /// VR intermedio sin auth (1.43.32). Google rota qué versiones VR acepta
+  /// sin PoToken; tener varias sube la tasa de éxito cuando tumba una.
+  static const _androidVr43 = _ClientSpec(
+    clientName: 'ANDROID_VR',
+    clientVersion: '1.43.32',
+    clientId: '28',
+    userAgent: 'com.google.android.apps.youtube.vr.oculus/1.43.32 '
         '(Linux; U; Android 12; en_US; Quest 3; '
         'Build/SQ3A.220605.009.A1; Cronet/107.0.5284.2)',
     osName: 'Android',
@@ -167,17 +185,26 @@ class YtMusicClient {
         'Safari/605.1.15',
   );
 
-  /// Orden de cascada para extracción de stream. Mismo orden que OpenTune
-  /// (probado 2025): IOS y MOBILE primero porque suelen funcionar sin PoT.
-  /// Los NO_AUTH son fallback potente para videos restringidos.
+  /// Orden de cascada para extracción de stream (reordenado 2026 tras el
+  /// endurecimiento de Google).
+  ///
+  /// Los ANDROID_VR SIN AUTH van PRIMERO: son los únicos que Google sigue
+  /// sirviendo sin PoToken (Proof-of-Origin) y devuelven URL directa (sin
+  /// `signatureCipher` que habría que descifrar con el player JS). Google
+  /// rota qué versión VR acepta, así que probamos tres (1.61 → 1.43 →
+  /// 1.37). Los mobile clients (IOS/ANDROID/…) quedan como fallback:
+  /// funcionan a ratos pero cada vez más piden PoToken → dan
+  /// `Status Error`. tvEmbedded se sacó de la cascada — ahora exige
+  /// login+PoToken y solo aportaba el "Status Error con tvEmbedded" del
+  /// final.
   static const playerClientsCascade = <PlayerClientId>[
+    PlayerClientId.androidVr, // 1.61.48
+    PlayerClientId.androidVr43, // 1.43.32
+    PlayerClientId.androidVrNoAuth, // 1.37
     PlayerClientId.ios,
     PlayerClientId.android,
     PlayerClientId.androidMusic,
     PlayerClientId.iosMusic,
-    PlayerClientId.androidVrNoAuth,
-    PlayerClientId.androidVr,
-    PlayerClientId.tvEmbedded,
   ];
 
   _ClientSpec _resolve(PlayerClientId id) => switch (id) {
@@ -185,6 +212,7 @@ class YtMusicClient {
         PlayerClientId.iosMusic => _iosMusic,
         PlayerClientId.android => _android,
         PlayerClientId.androidVr => _androidVr,
+        PlayerClientId.androidVr43 => _androidVr43,
         PlayerClientId.androidVrNoAuth => _androidVrNoAuth,
         PlayerClientId.androidMusic => _androidMusic,
         PlayerClientId.tvEmbedded => _tvEmbedded,
@@ -629,6 +657,7 @@ enum PlayerClientId {
   iosMusic,
   android,
   androidVr,
+  androidVr43,
   androidVrNoAuth,
   androidMusic,
   tvEmbedded,

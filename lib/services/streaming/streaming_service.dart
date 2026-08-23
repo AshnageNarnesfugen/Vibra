@@ -1527,21 +1527,33 @@ class StreamingService {
       }
     }
 
-    String? lastError;
-    // Cascada de clientes. Mismo orden que OpenTune (2025): IOS y ANDROID
-    // (full clients, no MUSIC) primero porque suelen funcionar sin PoT
-    // token. ANDROID_VR_NO_AUTH como fallback potente para videos
-    // restringidos (bypassea age-gate y region-block al ir como visitante).
+    final errors = <String>[];
+    // Cascada de clientes (reordenada 2026): ANDROID_VR sin auth primero —
+    // los únicos que Google sirve sin PoToken y con URL directa. Ver
+    // YtMusicClient.playerClientsCascade para el razonamiento.
     final clients = YtMusicClient.playerClientsCascade;
 
     for (final clientId in clients) {
       try {
         final json = await _client.player(videoId, clientId: clientId);
-        
-        // Verificamos si el video es reproducible (vital para invitados)
+
+        // Verificamos si el video es reproducible (vital para invitados).
+        // El `reason` del status suele explicar el bloqueo (geo, age-gate,
+        // "necesita PoToken", etc.) — lo incluimos para diagnóstico.
         final status = _at(json, ['playabilityStatus', 'status']) as String?;
         if (status != 'OK') {
-          lastError = 'Status $status con ${clientId.name}';
+          final reason = _at(json, ['playabilityStatus', 'reason']) ??
+              _at(json, [
+                'playabilityStatus',
+                'errorScreen',
+                'playerErrorMessageRenderer',
+                'reason',
+                'runs',
+                0,
+                'text'
+              ]);
+          errors.add('${clientId.name}: $status'
+              '${reason != null ? ' ($reason)' : ''}');
           continue;
         }
 
@@ -1552,13 +1564,13 @@ class StreamingService {
           if (formats is List) ...formats,
         ];
         if (all.isEmpty) {
-          lastError = 'streamingData vacío con ${clientId.name}';
+          errors.add('${clientId.name}: streamingData vacío');
           continue;
         }
 
         final best = _pickBestAudio(all, targetBitrateBps: targetBitrateBps);
         if (best == null) {
-          lastError = 'sin audio reproducible con ${clientId.name}';
+          errors.add('${clientId.name}: sin audio (URL cifrada/ausente)');
           continue;
         }
         final url = best['url'] as String;
@@ -1568,13 +1580,13 @@ class StreamingService {
         );
         return url;
       } catch (e) {
-        lastError = '${clientId.name}: $e';
+        errors.add('${clientId.name}: $e');
       }
     }
 
     throw StateError(
       'No se pudo obtener el stream para $videoId. '
-      'Última causa: $lastError',
+      'Todos los clientes fallaron: ${errors.join(' · ')}',
     );
   }
 
