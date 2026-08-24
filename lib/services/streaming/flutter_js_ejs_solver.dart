@@ -47,6 +47,17 @@ class FlutterJsEjsSolver extends BaseEJSSolver {
         rt.dispose();
         return null;
       }
+      // Polyfills: el QuickJS que embebe flutter_js es viejo y le faltan
+      // APIs ES2021/2022 que el bundle EJS (meriyah, etc.) usa —
+      // `Object.hasOwn`, `String.prototype.replaceAll`, `Array.prototype.at`.
+      // Sin ellos el bundle tira `TypeError: not a function` al cargar.
+      final poly = rt.evaluate(_polyfills);
+      if (poly.isError) {
+        lastError = 'polyfills: ${poly.stringResult}';
+        devLog('[EJS] $lastError');
+        rt.dispose();
+        return null;
+      }
       final res = rt.evaluate(modules);
       if (res.isError) {
         lastError = 'evaluar módulos: ${res.stringResult}';
@@ -54,7 +65,7 @@ class FlutterJsEjsSolver extends BaseEJSSolver {
         rt.dispose();
         return null;
       }
-      devLog('[EJS] solver JS inicializado (QuickJS)');
+      devLog('[EJS] solver JS inicializado (QuickJS + polyfills)');
       return FlutterJsEjsSolver._(rt);
     } catch (e) {
       lastError = 'init: $e';
@@ -83,4 +94,54 @@ class FlutterJsEjsSolver extends BaseEJSSolver {
       _rt.dispose();
     } catch (_) {}
   }
+
+  /// Polyfills de APIs ES2021/2022 ausentes en el QuickJS viejo de flutter_js.
+  /// Todos guardados con `if (!...)` — no pisan implementaciones nativas.
+  static const String _polyfills = r'''
+(function(){
+  if (!Object.hasOwn) {
+    Object.defineProperty(Object, 'hasOwn', {
+      value: function(o, k){ return Object.prototype.hasOwnProperty.call(o, k); },
+      configurable: true, writable: true
+    });
+  }
+  if (!String.prototype.replaceAll) {
+    Object.defineProperty(String.prototype, 'replaceAll', {
+      value: function(find, replace){
+        if (Object.prototype.toString.call(find) === '[object RegExp]') {
+          return this.replace(find, replace);
+        }
+        return this.split(find).join(replace);
+      },
+      configurable: true, writable: true
+    });
+  }
+  if (!Array.prototype.at) {
+    Object.defineProperty(Array.prototype, 'at', {
+      value: function(n){ n = Math.trunc(n) || 0; if (n < 0) n += this.length;
+        return (n < 0 || n >= this.length) ? undefined : this[n]; },
+      configurable: true, writable: true
+    });
+  }
+  if (!String.prototype.at) {
+    Object.defineProperty(String.prototype, 'at', {
+      value: function(n){ n = Math.trunc(n) || 0; if (n < 0) n += this.length;
+        return (n < 0 || n >= this.length) ? undefined : this[n]; },
+      configurable: true, writable: true
+    });
+  }
+  if (!Array.prototype.findLast) {
+    Object.defineProperty(Array.prototype, 'findLast', {
+      value: function(fn, thisArg){ for (var i=this.length-1;i>=0;i--){ if (fn.call(thisArg,this[i],i,this)) return this[i]; } return undefined; },
+      configurable: true, writable: true
+    });
+  }
+  if (!Object.fromEntries) {
+    Object.defineProperty(Object, 'fromEntries', {
+      value: function(iter){ var o={}; for (var e of iter){ o[e[0]]=e[1]; } return o; },
+      configurable: true, writable: true
+    });
+  }
+})();
+''';
 }
