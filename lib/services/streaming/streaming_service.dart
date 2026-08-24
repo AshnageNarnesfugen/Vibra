@@ -1720,13 +1720,19 @@ class StreamingService {
   }
 
   /// Igual que [_decipherFormatUrl] pero devuelve también en qué etapa falló
-  /// (para el diagnóstico): `stage` legible + `error` del solver si aplica.
-  Future<({String? url, String stage, String? error})> decipherFormatDetailed(
+  /// (para el diagnóstico): `stage` legible + `error` del solver + `ms`.
+  Future<({String? url, String stage, String? error, int? ms})>
+      decipherFormatDetailed(
     Map format,
   ) async {
     final playerUrl = await _fetchPlayerJsUrl();
     if (playerUrl == null) {
-      return (url: null, stage: 'no se obtuvo base.js url (iframe_api)', error: null);
+      return (
+        url: null,
+        stage: 'no se obtuvo base.js url (iframe_api)',
+        error: null,
+        ms: null,
+      );
     }
 
     String base;
@@ -1738,14 +1744,24 @@ class StreamingService {
     } else {
       final sc = (format['signatureCipher'] ?? format['cipher']) as String?;
       if (sc == null) {
-        return (url: null, stage: 'formato sin url ni signatureCipher', error: null);
+        return (
+          url: null,
+          stage: 'formato sin url ni signatureCipher',
+          error: null,
+          ms: null,
+        );
       }
       final params = Uri.splitQueryString(sc);
       rawSig = params['s'];
       sp = params['sp'] ?? 'signature';
       final b = params['url'];
       if (rawSig == null || b == null) {
-        return (url: null, stage: 'signatureCipher incompleto', error: null);
+        return (
+          url: null,
+          stage: 'signatureCipher incompleto',
+          error: null,
+          ms: null,
+        );
       }
       base = b;
     }
@@ -1759,10 +1775,10 @@ class StreamingService {
       n: rawN,
     );
     if (solved.error != null) {
-      return (url: null, stage: 'solver', error: solved.error);
+      return (url: null, stage: 'solver', error: solved.error, ms: solved.ms);
     }
     if (rawSig != null && solved.sig == null) {
-      return (url: null, stage: 'sig no resuelta', error: null);
+      return (url: null, stage: 'sig no resuelta', error: null, ms: solved.ms);
     }
 
     final qp = Map<String, String>.from(baseUri.queryParameters);
@@ -1772,6 +1788,7 @@ class StreamingService {
       url: baseUri.replace(queryParameters: qp).toString(),
       stage: 'ok',
       error: null,
+      ms: solved.ms,
     );
   }
 
@@ -1855,9 +1872,11 @@ class StreamingService {
       final det = await decipherFormatDetailed(audios.first);
       if (det.url == null) {
         buf.writeln('descifrado: FALLÓ en etapa "${det.stage}"'
-            '${det.error != null ? " — ${det.error}" : ""}');
+            '${det.error != null ? " — ${det.error}" : ""}'
+            '${det.ms != null ? " (${det.ms}ms)" : ""}');
         return buf.toString();
       }
+      if (det.ms != null) buf.writeln('descifrado tardó: ${det.ms}ms');
       var httpStatus = -1;
       try {
         final r = await http.head(Uri.parse(det.url!));
