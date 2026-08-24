@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
 import '../../models/song.dart';
+import 'flutter_js_ejs_solver.dart';
 import 'yt_auth.dart';
 import 'yt_music_client.dart';
 import '../../core/dev_log.dart';
@@ -208,10 +209,20 @@ class StreamingService {
 
   // youtube_explode: descifrador de firmas mantenido. Solo se usa como
   // fallback cuando la cascada InnerTube no consigue URL directa (tracks
-  // bot-gated → formatos cifrados de WEB_REMIX). Lazy para no cargarlo si
-  // nunca hace falta.
+  // bot-gated → formatos cifrados de WEB_REMIX). Lazy + con solver EJS
+  // (motor JS QuickJS) para resolver las challenges `sig`/`n` — sin el solver
+  // las URLs salen sin descifrar y googlevideo las rechaza con 403.
   yte.YoutubeExplode? _yt;
-  yte.YoutubeExplode get _ytExplode => _yt ??= yte.YoutubeExplode();
+  Future<yte.YoutubeExplode>? _ytInit;
+
+  Future<yte.YoutubeExplode> _ytExplodeAsync() {
+    return _ytInit ??= () async {
+      final solver = await FlutterJsEjsSolver.create();
+      final yt = yte.YoutubeExplode(jsSolver: solver);
+      _yt = yt;
+      return yt;
+    }();
+  }
 
   // -------- Cache de getEnrichedHome --------
   //
@@ -1653,7 +1664,8 @@ class StreamingService {
       web.apiUrl,
       headers: web.headers,
     );
-    final manifest = await _ytExplode.videos.streams.getManifest(
+    final yt = await _ytExplodeAsync();
+    final manifest = await yt.videos.streams.getManifest(
       videoId,
       ytClients: [client],
     );

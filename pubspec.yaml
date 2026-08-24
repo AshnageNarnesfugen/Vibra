@@ -1,7 +1,7 @@
 name: vibra
 description: "Reproductor de música con personalización profunda de la UI."
 publish_to: 'none'
-version: 1.8.0+39
+version: 1.8.1+40
 
 environment:
   sdk: ^3.11.5
@@ -61,6 +61,11 @@ dependencies:
   # WEB_REMIX con NUESTRA cookie para que combine su descifrador con nuestra
   # sesión (única forma de reproducir tracks bot-gated de YT Music).
   youtube_explode_dart: ^3.1.0
+  # Motor JS (QuickJS) para que youtube_explode ejecute el solver EJS de
+  # yt-dlp: resuelve las challenges `sig` y `n` de las URLs de media. Sin
+  # esto, las URLs de WEB_REMIX salen sin descifrar y googlevideo las
+  # rechaza con 403.
+  flutter_js: ^0.8.7
   webview_flutter: ^4.10.0
   # Dependencia directa (ya era transitiva) para poder llamar
   # setAcceptThirdPartyCookies en el login de Google: durante el redirect
