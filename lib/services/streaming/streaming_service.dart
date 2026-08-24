@@ -1713,13 +1713,22 @@ class StreamingService {
 
   /// Descifra la URL de un formato: resuelve la firma (`sig`) y el parámetro
   /// `n` (throttling) en el isolate del solver, y devuelve la URL final
-  /// reproducible.
+  /// reproducible (o null). Para diagnóstico usar [decipherFormatDetailed].
   Future<String?> _decipherFormatUrl(Map format) async {
-    final playerUrl = await _fetchPlayerJsUrl();
-    if (playerUrl == null) return null;
+    final r = await decipherFormatDetailed(format);
+    return r.url;
+  }
 
-    // Extraemos la firma cruda (si el formato viene cifrado) y el `n` crudo
-    // (del propio URL) para resolver ambos en UNA ida al isolate.
+  /// Igual que [_decipherFormatUrl] pero devuelve también en qué etapa falló
+  /// (para el diagnóstico): `stage` legible + `error` del solver si aplica.
+  Future<({String? url, String stage, String? error})> decipherFormatDetailed(
+    Map format,
+  ) async {
+    final playerUrl = await _fetchPlayerJsUrl();
+    if (playerUrl == null) {
+      return (url: null, stage: 'no se obtuvo base.js url (iframe_api)', error: null);
+    }
+
     String base;
     String? sp;
     String? rawSig;
@@ -1728,12 +1737,16 @@ class StreamingService {
       base = direct;
     } else {
       final sc = (format['signatureCipher'] ?? format['cipher']) as String?;
-      if (sc == null) return null;
+      if (sc == null) {
+        return (url: null, stage: 'formato sin url ni signatureCipher', error: null);
+      }
       final params = Uri.splitQueryString(sc);
       rawSig = params['s'];
       sp = params['sp'] ?? 'signature';
       final b = params['url'];
-      if (rawSig == null || b == null) return null;
+      if (rawSig == null || b == null) {
+        return (url: null, stage: 'signatureCipher incompleto', error: null);
+      }
       base = b;
     }
 
@@ -1745,19 +1758,21 @@ class StreamingService {
       sig: rawSig,
       n: rawN,
     );
-    if (solved == null) return null;
+    if (solved.error != null) {
+      return (url: null, stage: 'solver', error: solved.error);
+    }
+    if (rawSig != null && solved.sig == null) {
+      return (url: null, stage: 'sig no resuelta', error: null);
+    }
 
-    // Construimos la URL final: aplicamos la firma (si la había) y el `n`
-    // transformado.
     final qp = Map<String, String>.from(baseUri.queryParameters);
-    if (rawSig != null) {
-      if (solved.sig == null) return null;
-      qp[sp!] = solved.sig!;
-    }
-    if (rawN != null && solved.n != null) {
-      qp['n'] = solved.n!;
-    }
-    return baseUri.replace(queryParameters: qp).toString();
+    if (rawSig != null) qp[sp!] = solved.sig!;
+    if (rawN != null && solved.n != null) qp['n'] = solved.n!;
+    return (
+      url: baseUri.replace(queryParameters: qp).toString(),
+      stage: 'ok',
+      error: null,
+    );
   }
 
   /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
@@ -1808,28 +1823,52 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // Prueba end-to-end del descifrado (WEB_REMIX + cookie + solver EJS en
-    // isolate). El descifrado corre en segundo plano (no congela la UI).
+    // Prueba end-to-end del descifrado, etapa por etapa (WEB_REMIX + cookie +
+    // solver EJS en isolate). Corre en segundo plano (no congela la UI).
     buf.writeln('─────────');
     try {
-      final url = await _resolveViaExplode(videoId, 1 << 30);
-      if (url == null) {
-        buf.writeln('descifrado: no se obtuvo URL '
-            '(sin cookie / motor JS falló / sin formatos de audio)');
-      } else {
-        // Verificamos que la URL descifrada realmente sirva (no 403).
-        var httpStatus = -1;
-        try {
-          final r = await http.head(Uri.parse(url));
-          httpStatus = r.statusCode;
-        } catch (e) {
-          buf.writeln('descifrado: URL obtenida, HEAD falló: $e');
-        }
-        buf.writeln(httpStatus == 200
-            ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
-            : 'descifrado: URL obtenida pero HTTP $httpStatus '
-                '(¿falta poToken de media?)');
+      if (!(_client.auth?.isCompleteCookieSession ?? false)) {
+        buf.writeln('descifrado: sin sesión por cookie');
+        return buf.toString();
       }
+      // base.js url
+      final pjs = await _fetchPlayerJsUrl();
+      buf.writeln('base.js: ${pjs != null ? "OK ✓ ($pjs)" : "NO se obtuvo ✗"}');
+
+      // formatos de audio de WEB_REMIX
+      final wjson =
+          await _client.player(videoId, clientId: PlayerClientId.webRemix);
+      final adaptive = _at(wjson, ['streamingData', 'adaptiveFormats']);
+      final audios = (adaptive is List ? adaptive : const [])
+          .whereType<Map>()
+          .where((f) => (f['mimeType'] as String? ?? '').startsWith('audio'))
+          .toList();
+      buf.writeln('formatos audio WEB_REMIX: ${audios.length}');
+      if (audios.isEmpty) {
+        buf.writeln('descifrado: sin formatos de audio');
+        return buf.toString();
+      }
+
+      // descifrar el mejor y verificar
+      audios.sort((a, b) =>
+          ((b['bitrate'] as num?) ?? 0).compareTo((a['bitrate'] as num?) ?? 0));
+      final det = await decipherFormatDetailed(audios.first);
+      if (det.url == null) {
+        buf.writeln('descifrado: FALLÓ en etapa "${det.stage}"'
+            '${det.error != null ? " — ${det.error}" : ""}');
+        return buf.toString();
+      }
+      var httpStatus = -1;
+      try {
+        final r = await http.head(Uri.parse(det.url!));
+        httpStatus = r.statusCode;
+      } catch (e) {
+        buf.writeln('descifrado: URL OK, HEAD falló: $e');
+      }
+      buf.writeln(httpStatus == 200
+          ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
+          : 'descifrado: URL descifrada pero HTTP $httpStatus '
+              '(¿falta poToken de media?)');
     } catch (e) {
       buf.writeln('descifrado: ERROR $e');
     }

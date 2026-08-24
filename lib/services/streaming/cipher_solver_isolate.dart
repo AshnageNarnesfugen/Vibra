@@ -42,9 +42,9 @@ class CipherSolverIsolate {
     return ready.future;
   }
 
-  /// Resuelve las challenges. Devuelve `(sig, n)` descifrados, o null si el
-  /// motor JS falló. [sig] y [n] son los valores CRUDOS a transformar.
-  Future<({String? sig, String? n})?> solve({
+  /// Resuelve las challenges. Devuelve `sig`/`n` descifrados y, si falló, un
+  /// `error` legible (para diagnóstico). [sig] y [n] son los valores CRUDOS.
+  Future<({String? sig, String? n, String? error})> solve({
     required String playerUrl,
     String? sig,
     String? n,
@@ -52,8 +52,7 @@ class CipherSolverIsolate {
     try {
       await _ensureStarted();
     } catch (e) {
-      devLog('[cipher-isolate] no arrancó: $e');
-      return null;
+      return (sig: null, n: null, error: 'isolate no arrancó: $e');
     }
     final reply = ReceivePort();
     _send!.send({
@@ -65,13 +64,17 @@ class CipherSolverIsolate {
     try {
       final res = await reply.first.timeout(const Duration(seconds: 25));
       if (res is Map && res['error'] == null) {
-        return (sig: res['sig'] as String?, n: res['n'] as String?);
+        return (
+          sig: res['sig'] as String?,
+          n: res['n'] as String?,
+          error: null,
+        );
       }
-      devLog('[cipher-isolate] ${res is Map ? res['error'] : res}');
-      return null;
+      final err = res is Map ? '${res['error']}' : '$res';
+      devLog('[cipher-isolate] $err');
+      return (sig: null, n: null, error: err);
     } on TimeoutException {
-      devLog('[cipher-isolate] timeout resolviendo challenges');
-      return null;
+      return (sig: null, n: null, error: 'timeout (25s) resolviendo challenges');
     } finally {
       reply.close();
     }
