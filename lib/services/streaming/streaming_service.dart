@@ -215,9 +215,13 @@ class StreamingService {
   Future<FlutterJsEjsSolver?>? _solverInit;
 
   Future<FlutterJsEjsSolver?> _solverAsync() {
+    if (_solver != null) return Future.value(_solver);
     return _solverInit ??= () async {
       final s = await FlutterJsEjsSolver.create();
       _solver = s;
+      // Si falló, no memoizamos: el próximo intento re-crea (puede ser un
+      // fallo transitorio de red al bajar el bundle EJS).
+      if (s == null) _solverInit = null;
       return s;
     }();
   }
@@ -1813,7 +1817,8 @@ class StreamingService {
     buf.writeln('─────────');
     // Estado del motor JS (QuickJS + bundle EJS de yt-dlp).
     final solver = await _solverAsync();
-    buf.writeln('solver JS (EJS): ${solver != null ? "OK ✓" : "NO cargó ✗"}');
+    buf.writeln('solver JS (EJS): ${solver != null ? "OK ✓" : "NO cargó ✗"}'
+        '${solver == null && FlutterJsEjsSolver.lastError != null ? " — ${FlutterJsEjsSolver.lastError}" : ""}');
     try {
       final url = await _resolveViaExplode(videoId, 1 << 30);
       if (url == null) {
