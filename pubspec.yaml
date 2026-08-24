@@ -1,7 +1,7 @@
 name: vibra
 description: "Reproductor de música con personalización profunda de la UI."
 publish_to: 'none'
-version: 1.7.12+38
+version: 1.8.0+39
 
 environment:
   sdk: ^3.11.5
@@ -55,6 +55,12 @@ dependencies:
   # Streaming mode (cliente InnerTube hacia YouTube Music)
   http: ^1.2.2
   crypto: ^3.0.5
+  # Descifrado de firmas (signatureCipher) de los formatos WEB_REMIX. Desde
+  # 2026 YouTube ofusca base.js de forma que un solver a mano es inviable;
+  # este paquete mantiene el descifrador. Le pasamos un YoutubeApiClient
+  # WEB_REMIX con NUESTRA cookie para que combine su descifrador con nuestra
+  # sesión (única forma de reproducir tracks bot-gated de YT Music).
+  youtube_explode_dart: ^3.1.0
   webview_flutter: ^4.10.0
   # Dependencia directa (ya era transitiva) para poder llamar
   # setAcceptThirdPartyCookies en el login de Google: durante el redirect

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
 
 import '../../models/song.dart';
 import 'yt_auth.dart';
@@ -204,6 +205,13 @@ class StreamingService {
   // Cache muy simple: videoId → (url, expiresAt).
   final _streamCache = <String, ({String url, DateTime expiresAt})>{};
   static const _cacheTtl = Duration(hours: 5);
+
+  // youtube_explode: descifrador de firmas mantenido. Solo se usa como
+  // fallback cuando la cascada InnerTube no consigue URL directa (tracks
+  // bot-gated → formatos cifrados de WEB_REMIX). Lazy para no cargarlo si
+  // nunca hace falta.
+  yte.YoutubeExplode? _yt;
+  yte.YoutubeExplode get _ytExplode => _yt ??= yte.YoutubeExplode();
 
   // -------- Cache de getEnrichedHome --------
   //
@@ -1598,6 +1606,23 @@ class StreamingService {
       }
     }
 
+    // Fallback FINAL: si la cascada InnerTube no consiguió URL directa (todos
+    // los clientes móviles/VR bot-gated), intentamos WEB_REMIX autenticado +
+    // descifrado de firmas vía youtube_explode. Es lo único que reproduce los
+    // tracks bot-gated de YT Music (WEB_REMIX acepta la cookie de navegador).
+    try {
+      final url = await _resolveViaExplode(videoId, targetBitrateBps);
+      if (url != null) {
+        _streamCache[videoId] = (
+          url: url,
+          expiresAt: DateTime.now().add(_cacheTtl),
+        );
+        return url;
+      }
+    } catch (e) {
+      errors.add('explode(WEB_REMIX): $e');
+    }
+
     // Pie de diagnóstico: sin esto es imposible saber si el PoToken llegó o
     // si la sesión está completa. Ayuda a decidir el siguiente paso.
     final a = _client.auth;
@@ -1610,6 +1635,46 @@ class StreamingService {
       'No se pudo obtener el stream para $videoId. '
       'Todos los clientes fallaron: ${errors.join(' · ')} · $diag',
     );
+  }
+
+  /// Resuelve el stream vía youtube_explode usando un cliente WEB_REMIX
+  /// autenticado con NUESTRA cookie. youtube_explode hace el POST al endpoint
+  /// player (→ formatos cifrados) y descifra las firmas con el base.js. Es el
+  /// camino para tracks bot-gated. Devuelve null si no hay sesión por cookie.
+  Future<String?> _resolveViaExplode(
+    String videoId,
+    int targetBitrateBps,
+  ) async {
+    final web = _client.webRemixAuthedClient();
+    if (web == null) return null; // sin sesión por cookie no aplica
+
+    final client = yte.YoutubeApiClient(
+      web.payload,
+      web.apiUrl,
+      headers: web.headers,
+    );
+    final manifest = await _ytExplode.videos.streams.getManifest(
+      videoId,
+      ytClients: [client],
+    );
+    final audios = manifest.audioOnly.toList();
+    if (audios.isEmpty) return null;
+
+    // Elegimos el audio cuyo bitrate se acerca más al objetivo SIN pasarse;
+    // si todos superan el objetivo, el de menor bitrate.
+    audios.sort((a, b) => a.bitrate.bitsPerSecond
+        .compareTo(b.bitrate.bitsPerSecond));
+    yte.AudioOnlyStreamInfo pick = audios.first;
+    for (final s in audios) {
+      if (s.bitrate.bitsPerSecond <= targetBitrateBps) {
+        pick = s;
+      } else {
+        break;
+      }
+    }
+    devLog('[YTM] explode WEB_REMIX ok: itag=${pick.tag} '
+        'bitrate=${pick.bitrate.bitsPerSecond} codec=${pick.audioCodec}');
+    return pick.url.toString();
   }
 
   /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
@@ -1659,6 +1724,17 @@ class StreamingService {
       } catch (e) {
         buf.writeln('${clientId.name}: ERROR $e');
       }
+    }
+    // Prueba end-to-end del descifrado vía youtube_explode (WEB_REMIX + cookie
+    // + descifrado de firma). Si esto da OK, la reproducción funciona.
+    buf.writeln('─────────');
+    try {
+      final url = await _resolveViaExplode(videoId, 1 << 30);
+      buf.writeln(url != null
+          ? 'explode(WEB_REMIX+cifrado): OK → URL directa obtenida ✓'
+          : 'explode(WEB_REMIX+cifrado): sin sesión por cookie');
+    } catch (e) {
+      buf.writeln('explode(WEB_REMIX+cifrado): ERROR $e');
     }
     return buf.toString();
   }
@@ -1938,5 +2014,8 @@ class StreamingService {
     return null;
   }
 
-  void dispose() => _client.dispose();
+  void dispose() {
+    _yt?.close();
+    _client.dispose();
+  }
 }

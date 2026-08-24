@@ -264,6 +264,64 @@ class YtMusicClient {
     );
   }
 
+  /// Piezas de un cliente WEB_REMIX **autenticado** con nuestra cookie, para
+  /// pasárselas a `youtube_explode_dart` (que hace el POST al endpoint player
+  /// y descifra las firmas con el base.js). Es la única forma de reproducir
+  /// tracks bot-gated de YT Music: WEB_REMIX es el cliente que acepta la
+  /// cookie de navegador (SAPISIDHASH), y youtube_explode mantiene el
+  /// descifrador. Devuelve null si no hay sesión completa por cookie.
+  ({
+    Map<String, dynamic> payload,
+    String apiUrl,
+    Map<String, String> headers,
+  })? webRemixAuthedClient() {
+    final a = auth;
+    if (a == null || !a.isCompleteCookieSession) return null;
+
+    final ctx = _webMusic.toContext();
+    final vd = a.visitorData;
+    if (vd != null && vd.isNotEmpty) {
+      (ctx['client'] as Map<String, dynamic>)['visitorData'] = vd;
+      // onBehalfOfUser identifica al usuario logueado (Quick Picks, etc.).
+      final dsi = a.dataSyncId;
+      if (dsi != null && dsi.isNotEmpty) {
+        (ctx['user'] as Map<String, dynamic>)['onBehalfOfUser'] = dsi;
+      }
+    }
+    // youtube_explode necesita el clientVersion/Name en el context.client
+    // para armar los headers; ya están en toContext(). Añadimos userAgent
+    // ahí porque de ahí lo lee.
+    (ctx['client'] as Map<String, dynamic>)['userAgent'] = _webMusic.userAgent;
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'User-Agent': _webMusic.userAgent,
+      'X-YouTube-Client-Name': _webMusic.clientId,
+      'X-YouTube-Client-Version': _webMusic.clientVersion,
+      // Origin DEBE coincidir con el usado en el SAPISIDHASH (music.youtube).
+      'Origin': _origin,
+      'X-Origin': _origin,
+      'Cookie': a.cookie,
+    };
+    if (vd != null && vd.isNotEmpty) headers['X-Goog-Visitor-Id'] = vd;
+
+    final variants = a.sapisidVariants.toList();
+    if (variants.isNotEmpty) {
+      final pick = variants.firstWhere(
+        (v) => v.prefix == 'SAPISIDHASH',
+        orElse: () => variants.first,
+      );
+      final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final hash = sha1
+          .convert(utf8.encode('$ts ${pick.value} $_origin'))
+          .toString();
+      headers['Authorization'] = '${pick.prefix} ${ts}_$hash';
+    }
+
+    final apiUrl = '$_baseUrl/player?key=$_innertubeApiKey&prettyPrint=false';
+    return (payload: {'context': ctx}, apiUrl: apiUrl, headers: headers);
+  }
+
   /// Orden de la cascada de clients ADAPTADO a la sesión. Cuando hay
   /// sesión (cookie completa o Bearer OAuth vigente), los clients que mandan
   /// la cookie (loginSupported) van PRIMERO: se autentican y pasan el
