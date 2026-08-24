@@ -1,7 +1,7 @@
 name: vibra
 description: "Reproductor de música con personalización profunda de la UI."
 publish_to: 'none'
-version: 1.8.1+40
+version: 1.8.2+41
 
 environment:
   sdk: ^3.11.5

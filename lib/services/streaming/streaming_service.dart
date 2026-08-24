@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yte;
+import 'package:http/http.dart' as http;
+import 'package:youtube_explode_dart/js_challenge.dart' as ejs;
 
 import '../../models/song.dart';
 import 'flutter_js_ejs_solver.dart';
@@ -207,20 +208,17 @@ class StreamingService {
   final _streamCache = <String, ({String url, DateTime expiresAt})>{};
   static const _cacheTtl = Duration(hours: 5);
 
-  // youtube_explode: descifrador de firmas mantenido. Solo se usa como
-  // fallback cuando la cascada InnerTube no consigue URL directa (tracks
-  // bot-gated → formatos cifrados de WEB_REMIX). Lazy + con solver EJS
-  // (motor JS QuickJS) para resolver las challenges `sig`/`n` — sin el solver
-  // las URLs salen sin descifrar y googlevideo las rechaza con 403.
-  yte.YoutubeExplode? _yt;
-  Future<yte.YoutubeExplode>? _ytInit;
+  // Solver EJS (motor JS QuickJS) que resuelve las challenges `sig`/`n` de
+  // las URLs de media de WEB_REMIX. Sin él, googlevideo responde 403. Lazy:
+  // solo se inicializa cuando hace falta descifrar (tracks bot-gated).
+  FlutterJsEjsSolver? _solver;
+  Future<FlutterJsEjsSolver?>? _solverInit;
 
-  Future<yte.YoutubeExplode> _ytExplodeAsync() {
-    return _ytInit ??= () async {
-      final solver = await FlutterJsEjsSolver.create();
-      final yt = yte.YoutubeExplode(jsSolver: solver);
-      _yt = yt;
-      return yt;
+  Future<FlutterJsEjsSolver?> _solverAsync() {
+    return _solverInit ??= () async {
+      final s = await FlutterJsEjsSolver.create();
+      _solver = s;
+      return s;
     }();
   }
 
@@ -1648,45 +1646,119 @@ class StreamingService {
     );
   }
 
-  /// Resuelve el stream vía youtube_explode usando un cliente WEB_REMIX
-  /// autenticado con NUESTRA cookie. youtube_explode hace el POST al endpoint
-  /// player (→ formatos cifrados) y descifra las firmas con el base.js. Es el
-  /// camino para tracks bot-gated. Devuelve null si no hay sesión por cookie.
+  // base.js del player, cacheado. Es el mismo para todos los videos durante
+  // horas; solo cambia cuando YouTube rota el player.
+  String? _playerJsUrl;
+
+  /// URL del `base.js` del player, necesaria para el solver (descifra sig/n
+  /// contra ese script). Se extrae del HTML del iframe del reproductor.
+  Future<String?> _fetchPlayerJsUrl() async {
+    if (_playerJsUrl != null) return _playerJsUrl;
+    try {
+      final res = await http.get(
+        Uri.parse('https://www.youtube.com/iframe_api'),
+      );
+      // El iframe_api referencia el hash del player: `player\/HASH\/`.
+      final m = RegExp(r'player\\?/([0-9a-fA-F]{8})\\?/').firstMatch(res.body);
+      if (m != null) {
+        final hash = m.group(1);
+        _playerJsUrl = 'https://www.youtube.com/s/player/$hash/'
+            'player_ias.vflset/en_US/base.js';
+        return _playerJsUrl;
+      }
+    } catch (e) {
+      devLog('[YTM] no se pudo obtener player.js url: $e');
+    }
+    return null;
+  }
+
+  /// Resuelve el stream de tracks bot-gated: pide los formatos a WEB_REMIX con
+  /// NUESTRA cookie (único cliente que la acepta → status OK, formatos
+  /// cifrados) y descifra `sig` + `n` con el solver EJS de yt-dlp (motor JS).
+  ///
+  /// Resolución MANUAL solo-audio: evitamos `getManifest` de youtube_explode
+  /// porque valida `streams.first` (que suele ser el video 137) con un HEAD y
+  /// si ese 403ea tira todo — aunque el audio esté bien. Aquí procesamos solo
+  /// el mejor formato de audio y construimos la URL nosotros.
   Future<String?> _resolveViaExplode(
     String videoId,
     int targetBitrateBps,
   ) async {
-    final web = _client.webRemixAuthedClient();
-    if (web == null) return null; // sin sesión por cookie no aplica
+    if (!(_client.auth?.isCompleteCookieSession ?? false)) return null;
 
-    final client = yte.YoutubeApiClient(
-      web.payload,
-      web.apiUrl,
-      headers: web.headers,
-    );
-    final yt = await _ytExplodeAsync();
-    final manifest = await yt.videos.streams.getManifest(
-      videoId,
-      ytClients: [client],
-    );
-    final audios = manifest.audioOnly.toList();
+    final solver = await _solverAsync();
+    if (solver == null) return null; // sin motor JS no podemos descifrar
+
+    // 1. Formatos cifrados desde WEB_REMIX autenticado.
+    final json = await _client.player(videoId, clientId: PlayerClientId.webRemix);
+    final status = _at(json, ['playabilityStatus', 'status']) as String?;
+    if (status != 'OK') return null;
+
+    final adaptive = _at(json, ['streamingData', 'adaptiveFormats']);
+    if (adaptive is! List) return null;
+
+    // 2. Solo formatos de audio; elegimos el mejor bitrate ≤ objetivo.
+    final audios = adaptive
+        .whereType<Map>()
+        .where((f) => (f['mimeType'] as String? ?? '').startsWith('audio'))
+        .toList()
+      ..sort((a, b) => ((a['bitrate'] as num?) ?? 0)
+          .compareTo((b['bitrate'] as num?) ?? 0));
     if (audios.isEmpty) return null;
-
-    // Elegimos el audio cuyo bitrate se acerca más al objetivo SIN pasarse;
-    // si todos superan el objetivo, el de menor bitrate.
-    audios.sort((a, b) => a.bitrate.bitsPerSecond
-        .compareTo(b.bitrate.bitsPerSecond));
-    yte.AudioOnlyStreamInfo pick = audios.first;
-    for (final s in audios) {
-      if (s.bitrate.bitsPerSecond <= targetBitrateBps) {
-        pick = s;
+    Map pick = audios.first;
+    for (final f in audios) {
+      if (((f['bitrate'] as num?) ?? 0) <= targetBitrateBps) {
+        pick = f;
       } else {
         break;
       }
     }
-    devLog('[YTM] explode WEB_REMIX ok: itag=${pick.tag} '
-        'bitrate=${pick.bitrate.bitsPerSecond} codec=${pick.audioCodec}');
-    return pick.url.toString();
+
+    // 3. Descifrar la URL del formato elegido.
+    final url = await _decipherFormatUrl(pick, solver);
+    if (url == null) return null;
+    devLog('[YTM] WEB_REMIX+EJS ok: itag=${pick['itag']} '
+        'bitrate=${pick['bitrate']} mime=${pick['mimeType']}');
+    return url;
+  }
+
+  /// Descifra la URL de un formato: resuelve la firma (`sig`) y el parámetro
+  /// `n` (throttling) con el solver, y devuelve la URL final reproducible.
+  Future<String?> _decipherFormatUrl(
+    Map format,
+    FlutterJsEjsSolver solver,
+  ) async {
+    final playerUrl = await _fetchPlayerJsUrl();
+    if (playerUrl == null) return null;
+
+    String url;
+    final direct = format['url'] as String?;
+    if (direct != null && direct.isNotEmpty) {
+      url = direct;
+    } else {
+      // signatureCipher: `s=<firma>&sp=<param>&url=<base>`.
+      final sc = (format['signatureCipher'] ?? format['cipher']) as String?;
+      if (sc == null) return null;
+      final params = Uri.splitQueryString(sc);
+      final s = params['s'];
+      final sp = params['sp'] ?? 'signature';
+      final base = params['url'];
+      if (s == null || base == null) return null;
+      final sig = await solver.solve(playerUrl, ejs.JSChallengeType.sig, s);
+      url = '$base&$sp=${Uri.encodeQueryComponent(sig)}';
+    }
+
+    // El parámetro `n` (throttling): sin transformar → 403. Lo resolvemos y
+    // reemplazamos en la query.
+    final uri = Uri.parse(url);
+    final n = uri.queryParameters['n'];
+    if (n != null && n.isNotEmpty) {
+      final newN = await solver.solve(playerUrl, ejs.JSChallengeType.n, n);
+      final qp = Map<String, String>.from(uri.queryParameters);
+      qp['n'] = newN;
+      url = uri.replace(queryParameters: qp).toString();
+    }
+    return url;
   }
 
   /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
@@ -1737,16 +1809,32 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // Prueba end-to-end del descifrado vía youtube_explode (WEB_REMIX + cookie
-    // + descifrado de firma). Si esto da OK, la reproducción funciona.
+    // Prueba end-to-end del descifrado (WEB_REMIX + cookie + solver EJS).
     buf.writeln('─────────');
+    // Estado del motor JS (QuickJS + bundle EJS de yt-dlp).
+    final solver = await _solverAsync();
+    buf.writeln('solver JS (EJS): ${solver != null ? "OK ✓" : "NO cargó ✗"}');
     try {
       final url = await _resolveViaExplode(videoId, 1 << 30);
-      buf.writeln(url != null
-          ? 'explode(WEB_REMIX+cifrado): OK → URL directa obtenida ✓'
-          : 'explode(WEB_REMIX+cifrado): sin sesión por cookie');
+      if (url == null) {
+        buf.writeln('descifrado: no se obtuvo URL '
+            '(sin cookie / sin solver / sin formatos de audio)');
+      } else {
+        // Verificamos que la URL descifrada realmente sirva (no 403).
+        var httpStatus = -1;
+        try {
+          final r = await http.head(Uri.parse(url));
+          httpStatus = r.statusCode;
+        } catch (e) {
+          buf.writeln('descifrado: URL obtenida, HEAD falló: $e');
+        }
+        buf.writeln(httpStatus == 200
+            ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
+            : 'descifrado: URL obtenida pero HTTP $httpStatus '
+                '(¿falta poToken de media?)');
+      }
     } catch (e) {
-      buf.writeln('explode(WEB_REMIX+cifrado): ERROR $e');
+      buf.writeln('descifrado: ERROR $e');
     }
     return buf.toString();
   }
@@ -2027,7 +2115,7 @@ class StreamingService {
   }
 
   void dispose() {
-    _yt?.close();
+    _solver?.dispose();
     _client.dispose();
   }
 }
