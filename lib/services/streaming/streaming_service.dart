@@ -2,10 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:youtube_explode_dart/js_challenge.dart' as ejs;
 
 import '../../models/song.dart';
-import 'flutter_js_ejs_solver.dart';
+import 'cipher_solver_isolate.dart';
 import 'yt_auth.dart';
 import 'yt_music_client.dart';
 import '../../core/dev_log.dart';
@@ -208,23 +207,12 @@ class StreamingService {
   final _streamCache = <String, ({String url, DateTime expiresAt})>{};
   static const _cacheTtl = Duration(hours: 5);
 
-  // Solver EJS (motor JS QuickJS) que resuelve las challenges `sig`/`n` de
-  // las URLs de media de WEB_REMIX. Sin él, googlevideo responde 403. Lazy:
-  // solo se inicializa cuando hace falta descifrar (tracks bot-gated).
-  FlutterJsEjsSolver? _solver;
-  Future<FlutterJsEjsSolver?>? _solverInit;
-
-  Future<FlutterJsEjsSolver?> _solverAsync() {
-    if (_solver != null) return Future.value(_solver);
-    return _solverInit ??= () async {
-      final s = await FlutterJsEjsSolver.create();
-      _solver = s;
-      // Si falló, no memoizamos: el próximo intento re-crea (puede ser un
-      // fallo transitorio de red al bajar el bundle EJS).
-      if (s == null) _solverInit = null;
-      return s;
-    }();
-  }
+  // Descifrado de `sig`/`n` (motor JS QuickJS + solver EJS de yt-dlp) en un
+  // isolate en segundo plano. Corre el trabajo CPU-intensivo (parsear el
+  // base.js de ~2.9 MB) FUERA del hilo de UI: hacerlo en el main thread
+  // congela la app y la crashea (ANR). Sin el solver, las URLs de WEB_REMIX
+  // salen sin `n` transformado y googlevideo responde 403.
+  final CipherSolverIsolate _cipher = CipherSolverIsolate();
 
   // -------- Cache de getEnrichedHome --------
   //
@@ -1690,9 +1678,6 @@ class StreamingService {
   ) async {
     if (!(_client.auth?.isCompleteCookieSession ?? false)) return null;
 
-    final solver = await _solverAsync();
-    if (solver == null) return null; // sin motor JS no podemos descifrar
-
     // 1. Formatos cifrados desde WEB_REMIX autenticado.
     final json = await _client.player(videoId, clientId: PlayerClientId.webRemix);
     final status = _at(json, ['playabilityStatus', 'status']) as String?;
@@ -1718,8 +1703,8 @@ class StreamingService {
       }
     }
 
-    // 3. Descifrar la URL del formato elegido.
-    final url = await _decipherFormatUrl(pick, solver);
+    // 3. Descifrar la URL del formato elegido (en el isolate).
+    final url = await _decipherFormatUrl(pick);
     if (url == null) return null;
     devLog('[YTM] WEB_REMIX+EJS ok: itag=${pick['itag']} '
         'bitrate=${pick['bitrate']} mime=${pick['mimeType']}');
@@ -1727,42 +1712,52 @@ class StreamingService {
   }
 
   /// Descifra la URL de un formato: resuelve la firma (`sig`) y el parámetro
-  /// `n` (throttling) con el solver, y devuelve la URL final reproducible.
-  Future<String?> _decipherFormatUrl(
-    Map format,
-    FlutterJsEjsSolver solver,
-  ) async {
+  /// `n` (throttling) en el isolate del solver, y devuelve la URL final
+  /// reproducible.
+  Future<String?> _decipherFormatUrl(Map format) async {
     final playerUrl = await _fetchPlayerJsUrl();
     if (playerUrl == null) return null;
 
-    String url;
+    // Extraemos la firma cruda (si el formato viene cifrado) y el `n` crudo
+    // (del propio URL) para resolver ambos en UNA ida al isolate.
+    String base;
+    String? sp;
+    String? rawSig;
     final direct = format['url'] as String?;
     if (direct != null && direct.isNotEmpty) {
-      url = direct;
+      base = direct;
     } else {
-      // signatureCipher: `s=<firma>&sp=<param>&url=<base>`.
       final sc = (format['signatureCipher'] ?? format['cipher']) as String?;
       if (sc == null) return null;
       final params = Uri.splitQueryString(sc);
-      final s = params['s'];
-      final sp = params['sp'] ?? 'signature';
-      final base = params['url'];
-      if (s == null || base == null) return null;
-      final sig = await solver.solve(playerUrl, ejs.JSChallengeType.sig, s);
-      url = '$base&$sp=${Uri.encodeQueryComponent(sig)}';
+      rawSig = params['s'];
+      sp = params['sp'] ?? 'signature';
+      final b = params['url'];
+      if (rawSig == null || b == null) return null;
+      base = b;
     }
 
-    // El parámetro `n` (throttling): sin transformar → 403. Lo resolvemos y
-    // reemplazamos en la query.
-    final uri = Uri.parse(url);
-    final n = uri.queryParameters['n'];
-    if (n != null && n.isNotEmpty) {
-      final newN = await solver.solve(playerUrl, ejs.JSChallengeType.n, n);
-      final qp = Map<String, String>.from(uri.queryParameters);
-      qp['n'] = newN;
-      url = uri.replace(queryParameters: qp).toString();
+    final baseUri = Uri.parse(base);
+    final rawN = baseUri.queryParameters['n'];
+
+    final solved = await _cipher.solve(
+      playerUrl: playerUrl,
+      sig: rawSig,
+      n: rawN,
+    );
+    if (solved == null) return null;
+
+    // Construimos la URL final: aplicamos la firma (si la había) y el `n`
+    // transformado.
+    final qp = Map<String, String>.from(baseUri.queryParameters);
+    if (rawSig != null) {
+      if (solved.sig == null) return null;
+      qp[sp!] = solved.sig!;
     }
-    return url;
+    if (rawN != null && solved.n != null) {
+      qp['n'] = solved.n!;
+    }
+    return baseUri.replace(queryParameters: qp).toString();
   }
 
   /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
@@ -1813,17 +1808,14 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // Prueba end-to-end del descifrado (WEB_REMIX + cookie + solver EJS).
+    // Prueba end-to-end del descifrado (WEB_REMIX + cookie + solver EJS en
+    // isolate). El descifrado corre en segundo plano (no congela la UI).
     buf.writeln('─────────');
-    // Estado del motor JS (QuickJS + bundle EJS de yt-dlp).
-    final solver = await _solverAsync();
-    buf.writeln('solver JS (EJS): ${solver != null ? "OK ✓" : "NO cargó ✗"}'
-        '${solver == null && FlutterJsEjsSolver.lastError != null ? " — ${FlutterJsEjsSolver.lastError}" : ""}');
     try {
       final url = await _resolveViaExplode(videoId, 1 << 30);
       if (url == null) {
         buf.writeln('descifrado: no se obtuvo URL '
-            '(sin cookie / sin solver / sin formatos de audio)');
+            '(sin cookie / motor JS falló / sin formatos de audio)');
       } else {
         // Verificamos que la URL descifrada realmente sirva (no 403).
         var httpStatus = -1;
@@ -2120,7 +2112,7 @@ class StreamingService {
   }
 
   void dispose() {
-    _solver?.dispose();
+    _cipher.dispose();
     _client.dispose();
   }
 }
