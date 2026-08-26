@@ -1551,6 +1551,26 @@ class StreamingService {
     }
 
     final errors = <String>[];
+
+    // Atajo para usuarios logueados: los clientes nativos (IOS/ANDROID_*)
+    // rechazan la cookie de navegador con 400 y los VR anónimos están
+    // bot-gated. El único que funciona es WEB_REMIX + descifrado. Vamos
+    // directo (evita ~8 requests fallidos antes del bueno).
+    if (_client.auth?.isCompleteCookieSession ?? false) {
+      try {
+        final url = await _resolveViaExplode(videoId, targetBitrateBps);
+        if (url != null) {
+          _streamCache[videoId] = (
+            url: url,
+            expiresAt: DateTime.now().add(_cacheTtl),
+          );
+          return url;
+        }
+      } catch (e) {
+        errors.add('webRemix+descifrado: $e');
+      }
+    }
+
     // Cascada adaptada a la sesión: si hay cookie completa, los clients que
     // se autentican van primero (pasan el bot-check de Google); sin sesión,
     // los ANDROID_VR anónimos primero. Ver YtMusicClient.orderedPlayerClients.
@@ -1618,20 +1638,7 @@ class StreamingService {
     // los clientes móviles/VR bot-gated), intentamos WEB_REMIX autenticado +
     // descifrado de firmas vía youtube_explode. Es lo único que reproduce los
     // tracks bot-gated de YT Music (WEB_REMIX acepta la cookie de navegador).
-    // El descifrado usa la variante TCE del base.js + funciones pequeñas en
-    // QuickJS (rápido). Ver CipherSolverIsolate / cipher_extractor.
-    try {
-      final url = await _resolveViaExplode(videoId, targetBitrateBps);
-      if (url != null) {
-        _streamCache[videoId] = (
-          url: url,
-          expiresAt: DateTime.now().add(_cacheTtl),
-        );
-        return url;
-      }
-    } catch (e) {
-      errors.add('webRemix+descifrado: $e');
-    }
+    // (El descifrado WEB_REMIX ya se intentó al principio para logueados.)
 
     // Pie de diagnóstico: sin esto es imposible saber si el PoToken llegó o
     // si la sesión está completa. Ayuda a decidir el siguiente paso.
