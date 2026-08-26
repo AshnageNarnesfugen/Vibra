@@ -1618,9 +1618,20 @@ class StreamingService {
     // los clientes móviles/VR bot-gated), intentamos WEB_REMIX autenticado +
     // descifrado de firmas vía youtube_explode. Es lo único que reproduce los
     // tracks bot-gated de YT Music (WEB_REMIX acepta la cookie de navegador).
-    // NOTA: el descifrado vía WEB_REMIX está DESACTIVADO — el base.js de 2026
-    // no se puede descifrar con regex (ni NewPipe puede) y el parseo completo
-    // en QuickJS cuelga (>90s). Colgaba la reproducción 90s. Ver diagnóstico.
+    // El descifrado usa la variante TCE del base.js + funciones pequeñas en
+    // QuickJS (rápido). Ver CipherSolverIsolate / cipher_extractor.
+    try {
+      final url = await _resolveViaExplode(videoId, targetBitrateBps);
+      if (url != null) {
+        _streamCache[videoId] = (
+          url: url,
+          expiresAt: DateTime.now().add(_cacheTtl),
+        );
+        return url;
+      }
+    } catch (e) {
+      errors.add('webRemix+descifrado: $e');
+    }
 
     // Pie de diagnóstico: sin esto es imposible saber si el PoToken llegó o
     // si la sesión está completa. Ayuda a decidir el siguiente paso.
@@ -1693,9 +1704,9 @@ class StreamingService {
   /// porque valida `streams.first` (que suele ser el video 137) con un HEAD y
   /// si ese 403ea tira todo — aunque el audio esté bien. Aquí procesamos solo
   /// el mejor formato de audio y construimos la URL nosotros.
-  // Retirado del flujo (base.js 2026 indescifrable en móvil). Se conserva
-  // por si vuelve a ser viable con otro motor.
-  // ignore: unused_element
+  /// WEB_REMIX autenticado (formatos cifrados) + descifrado sig/n via el
+  /// isolate (funciones extraídas de la variante TCE del base.js). Devuelve la
+  /// URL de audio directa, o null.
   Future<String?> _resolveViaExplode(
     String videoId,
     int targetBitrateBps,
@@ -1880,7 +1891,26 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // (El descifrado vía WEB_REMIX se retiró del diagnóstico — colgaba 90s.)
+    // Prueba end-to-end del descifrado (WEB_REMIX + funciones TCE en QuickJS).
+    buf.writeln('─────────');
+    try {
+      final url = await _resolveViaExplode(videoId, 1 << 30);
+      if (url == null) {
+        buf.writeln('descifrado: no se obtuvo URL');
+      } else {
+        var st = -1;
+        try {
+          st = (await http.head(Uri.parse(url))).statusCode;
+        } catch (e) {
+          buf.writeln('descifrado: URL OK, HEAD falló: $e');
+        }
+        buf.writeln(st == 200
+            ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
+            : 'descifrado: URL descifrada pero HTTP $st');
+      }
+    } catch (e) {
+      buf.writeln('descifrado: ERROR $e');
+    }
     return buf.toString();
   }
 

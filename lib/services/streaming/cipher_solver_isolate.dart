@@ -1,20 +1,21 @@
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:youtube_explode_dart/js_challenge.dart';
+import 'package:flutter_js/flutter_js.dart';
+import 'package:http/http.dart' as http;
 
 import '../../core/dev_log.dart';
-import 'flutter_js_ejs_solver.dart';
+import 'cipher_extractor.dart';
 
-/// Corre el descifrado de `sig`/`n` (motor JS QuickJS + solver EJS de yt-dlp)
-/// en un **isolate en segundo plano**.
+/// Descifra `sig`/`n` de las URLs de YouTube en un **isolate en segundo
+/// plano**, corriendo SOLO las funciones pequeñas extraídas del `base.js`
+/// (variante `player_ias_tce`) en QuickJS. No parsea el archivo completo:
+/// [buildDeobfuscator] localiza por regex las funciones de firma y de `n`
+/// (unos pocos KB) y el motor las evalúa en milisegundos.
 ///
-/// Es imprescindible: evaluar el `base.js` (~2.9 MB) y parsearlo con meriyah
-/// es CPU-intensivo y SÍNCRONO; hacerlo en el hilo de UI congela la app y
-/// dispara un ANR/crash. En un isolate dedicado, la UI queda libre.
-///
-/// El isolate mantiene vivo el runtime QuickJS y el solver (con su cache del
-/// player preprocesado), así solo el primer track paga el parseo completo.
+/// Todo el trabajo (descargar el base.js, extraer, evaluar) va en el isolate
+/// para no bloquear la UI. El script deobfuscado se cachea, así solo el
+/// primer track paga la descarga.
 class CipherSolverIsolate {
   Isolate? _isolate;
   SendPort? _send;
@@ -42,14 +43,13 @@ class CipherSolverIsolate {
     return ready.future;
   }
 
-  /// Resuelve las challenges. Devuelve `sig`/`n` descifrados y, si falló, un
-  /// `error` legible (para diagnóstico). [sig] y [n] son los valores CRUDOS.
-  /// [timeout] generoso: el primer parse del base.js en QuickJS es lento.
+  /// Resuelve las challenges. [playerUrl] es la URL del `base.js` (se le fuerza
+  /// la variante `_tce`). Devuelve `sig`/`n` descifrados o un `error` legible.
   Future<({String? sig, String? n, String? error, int? ms})> solve({
     required String playerUrl,
     String? sig,
     String? n,
-    Duration timeout = const Duration(seconds: 90),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     try {
       await _ensureStarted();
@@ -75,12 +75,17 @@ class CipherSolverIsolate {
       }
       final err = res is Map ? '${res['error']}' : '$res';
       devLog('[cipher-isolate] $err');
-      return (sig: null, n: null, error: err, ms: res is Map ? res['ms'] as int? : null);
+      return (
+        sig: null,
+        n: null,
+        error: err,
+        ms: res is Map ? res['ms'] as int? : null
+      );
     } on TimeoutException {
       return (
         sig: null,
         n: null,
-        error: 'timeout (${timeout.inSeconds}s) resolviendo challenges',
+        error: 'timeout (${timeout.inSeconds}s)',
         ms: null,
       );
     } finally {
@@ -95,37 +100,72 @@ class CipherSolverIsolate {
     _ready = null;
   }
 
-  /// Punto de entrada del isolate: crea el solver una vez y atiende
-  /// solicitudes de descifrado.
+  // ───────────────────────── isolate ─────────────────────────
   static Future<void> _entry(SendPort mainSend) async {
     final rp = ReceivePort();
     mainSend.send(rp.sendPort);
-    FlutterJsEjsSolver? solver;
+
+    JavascriptRuntime? rt;
+    String? loadedFor; // playerUrl del script actualmente cargado
+
     await for (final msg in rp) {
       final m = msg as Map;
       final reply = m['reply'] as SendPort;
       final sw = Stopwatch()..start();
       try {
-        solver ??= await FlutterJsEjsSolver.create();
-        if (solver == null) {
-          reply.send({
-            'error': 'solver init: ${FlutterJsEjsSolver.lastError}',
-            'ms': sw.elapsedMilliseconds,
-          });
-          continue;
+        final baseUrl = m['playerUrl'] as String;
+        // Forzar la variante TCE (ofuscación clásica, extraíble por regex).
+        final tceUrl = baseUrl.replaceFirst(
+          RegExp(r'/player_[a-z0-9]+\.vflset/'),
+          '/player_ias_tce.vflset/',
+        );
+
+        if (rt == null || loadedFor != tceUrl) {
+          rt?.dispose();
+          rt = null;
+          final resp = await http.get(Uri.parse(tceUrl));
+          if (resp.statusCode != 200) {
+            reply.send({
+              'error': 'base.js tce HTTP ${resp.statusCode}',
+              'ms': sw.elapsedMilliseconds
+            });
+            continue;
+          }
+          final script = buildDeobfuscator(resp.body);
+          if (script == null) {
+            reply.send({
+              'error': 'no se pudo extraer sig/n del base.js',
+              'ms': sw.elapsedMilliseconds
+            });
+            continue;
+          }
+          rt = getJavascriptRuntime();
+          final ev = rt.evaluate(script);
+          if (ev.isError) {
+            reply.send({
+              'error': 'eval deobf: ${ev.stringResult}',
+              'ms': sw.elapsedMilliseconds
+            });
+            rt.dispose();
+            rt = null;
+            continue;
+          }
+          loadedFor = tceUrl;
+          devLog('[cipher-isolate] deobf cargado (${script.length}b) '
+              'en ${sw.elapsedMilliseconds}ms');
         }
-        final playerUrl = m['playerUrl'] as String;
+
         String? outSig;
         String? outN;
         final rawSig = m['sig'] as String?;
         final rawN = m['n'] as String?;
-        // Ambas challenges (sig + n) comparten el mismo player: la primera
-        // paga el parse completo, la segunda usa el player preprocesado.
         if (rawSig != null && rawSig.isNotEmpty) {
-          outSig = await solver.solve(playerUrl, JSChallengeType.sig, rawSig);
+          final r = rt.evaluate('__sig(${_jsStr(rawSig)})');
+          if (!r.isError) outSig = r.stringResult;
         }
         if (rawN != null && rawN.isNotEmpty) {
-          outN = await solver.solve(playerUrl, JSChallengeType.n, rawN);
+          final r = rt.evaluate('__n(${_jsStr(rawN)})');
+          if (!r.isError) outN = r.stringResult;
         }
         reply.send({
           'sig': outSig,
@@ -137,5 +177,16 @@ class CipherSolverIsolate {
         reply.send({'error': e.toString(), 'ms': sw.elapsedMilliseconds});
       }
     }
+  }
+
+  /// Serializa un string a un literal JS seguro (para incrustarlo en la
+  /// llamada `__sig("...")`).
+  static String _jsStr(String s) {
+    final esc = s
+        .replaceAll(r'\', r'\\')
+        .replaceAll('"', r'\"')
+        .replaceAll('\n', r'\n')
+        .replaceAll('\r', r'\r');
+    return '"$esc"';
   }
 }
