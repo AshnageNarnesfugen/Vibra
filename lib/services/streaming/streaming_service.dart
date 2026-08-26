@@ -1847,6 +1847,15 @@ class StreamingService {
       PlayerClientId.webRemix,
     ];
     final diagSts = await _fetchSts();
+    // Volcado del request de ANDROID_MUSIC (para comparar contra OpenTune).
+    buf.writeln('STS=$diagSts');
+    buf.writeln('── request androidMusic ──');
+    buf.writeln(_client.debugPlayerRequest(
+      videoId,
+      PlayerClientId.androidMusic,
+      signatureTimestamp: diagSts,
+    ));
+    buf.writeln('──────────');
     for (final clientId in clients) {
       try {
         final json = await _client.player(

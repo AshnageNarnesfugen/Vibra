@@ -403,6 +403,52 @@ class YtMusicClient {
     }
   }
 
+  /// DEBUG: construye (sin enviar) el request del endpoint `player` para un
+  /// cliente, y devuelve URL + headers (cookie/Authorization redactados) +
+  /// body JSON. Para comparar byte a byte contra el request de OpenTune.
+  String debugPlayerRequest(
+    String videoId,
+    PlayerClientId clientId, {
+    int? signatureTimestamp,
+  }) {
+    final spec = _resolve(clientId);
+    final body = <String, dynamic>{'videoId': videoId};
+    if (signatureTimestamp != null) {
+      body['playbackContext'] = {
+        'contentPlaybackContext': {'signatureTimestamp': signatureTimestamp},
+      };
+    }
+    final ctx = spec.toContext();
+    final vd = auth?.visitorData;
+    if (vd != null && vd.isNotEmpty && !(auth?.hasValidBearer ?? false)) {
+      (ctx['client'] as Map<String, dynamic>)['visitorData'] = vd;
+    }
+    final dsi = auth?.dataSyncId;
+    if (spec.loginSupported &&
+        dsi != null &&
+        dsi.isNotEmpty &&
+        (auth?.isCompleteCookieSession ?? false) &&
+        !(auth?.hasValidBearer ?? false)) {
+      (ctx['user'] as Map<String, dynamic>)['onBehalfOfUser'] = dsi;
+    }
+    final merged = <String, dynamic>{'context': ctx, ...body};
+    final headers = Map<String, String>.from(_buildHeaders(spec));
+    headers.updateAll((k, v) {
+      final lk = k.toLowerCase();
+      if (lk == 'cookie' || lk == 'authorization') {
+        return '<redactado len=${v.length}>';
+      }
+      return v;
+    });
+    final isWeb = spec.clientName == 'WEB_REMIX';
+    final uri = isWeb
+        ? '$_baseUrl/player?prettyPrint=false&key=$_innertubeApiKey'
+        : '$_baseUrl/player?prettyPrint=false';
+    final b = const JsonEncoder.withIndent('  ').convert(merged);
+    final h = headers.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+    return 'POST $uri\n--- headers ---\n$h\n--- body ---\n$b';
+  }
+
   /// Sugerencias de búsqueda (autocomplete).
   Future<Map<String, dynamic>> searchSuggestions(String input) async {
     return _post(
@@ -898,18 +944,11 @@ class _ClientSpec {
           if (deviceModel != null) 'deviceModel': deviceModel,
           if (androidSdkVersion != null) 'androidSdkVersion': androidSdkVersion,
         },
-        // `request` como lo manda OpenTune — algunos endpoints lo esperan.
-        'request': <String, dynamic>{
-          'internalExperimentFlags': <dynamic>[],
-          'useSsl': true,
-        },
-        // Tipo explícito Map<String, dynamic>: sin esto Dart lo infería como
-        // Map<String, bool> (solo había un campo bool) y al inyectar
-        // `onBehalfOfUser` (String) explotaba en runtime con
-        // "type 'String' is not a subtype of type 'bool' of 'value'".
-        'user': <String, dynamic>{
-          'lockedSafetyMode': false,
-        },
+        // `user` vacío por defecto (OpenTune NO manda lockedSafetyMode ni un
+        // objeto `request`; kotlinx omite los defaults). `onBehalfOfUser` se
+        // inyecta en _post cuando corresponde. Tipo explícito Map<String,
+        // dynamic> para poder inyectar el String después.
+        'user': <String, dynamic>{},
       };
 
   /// Devuelve una copia con `clientVersion` reemplazada. Útil cuando se
