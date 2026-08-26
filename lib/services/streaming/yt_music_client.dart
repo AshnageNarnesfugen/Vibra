@@ -203,6 +203,37 @@ class YtMusicClient {
     androidSdkVersion: '35',
   );
 
+  // Clients extra que OpenTune tiene y sirven de fallback autenticado cuando
+  // ANDROID_MUSIC/IOS dan 400. Uno de estos suele autenticar y devolver URLs
+  // DIRECTAS (sin cifrar).
+  static const _androidCreator = _ClientSpec(
+    clientName: 'ANDROID_CREATOR',
+    clientVersion: '23.47.101',
+    clientId: '14',
+    userAgent: 'com.google.android.apps.youtube.creator/23.47.101 '
+        '(Linux; U; Android 15; en_US; Pixel 9 Pro Fold; '
+        'Build/AP3A.241005.015.A2; Cronet/132.0.6779.0)',
+    osName: 'Android',
+    osVersion: '15',
+    deviceMake: 'Google',
+    deviceModel: 'Pixel 9 Pro Fold',
+    androidSdkVersion: '35',
+  );
+
+  static const _androidUnplugged = _ClientSpec(
+    clientName: 'ANDROID_UNPLUGGED',
+    clientVersion: '8.49.0',
+    clientId: '29',
+    userAgent: 'com.google.android.apps.youtube.unplugged/8.49.0 '
+        '(Linux; U; Android 15; en_US; Pixel 9 Pro; '
+        'Build/AP4A.250205.002; Cronet/132.0.6834.79) gzip',
+    osName: 'Android',
+    osVersion: '15',
+    deviceMake: 'Google',
+    deviceModel: 'Pixel 9 Pro',
+    androidSdkVersion: '35',
+  );
+
   static const _tvEmbedded = _ClientSpec(
     clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
     clientVersion: '2.0',
@@ -231,6 +262,8 @@ class YtMusicClient {
     PlayerClientId.androidVrNoAuth, // 1.37
     PlayerClientId.ios,
     PlayerClientId.androidMusic,
+    PlayerClientId.androidCreator, // fallback autenticado (URLs directas)
+    PlayerClientId.androidUnplugged, // fallback autenticado (URLs directas)
     PlayerClientId.iosMusic,
   ];
   // NOTA: el cliente ANDROID plano (com.google.android.youtube) se sacó de
@@ -246,6 +279,8 @@ class YtMusicClient {
         PlayerClientId.androidVr43 => _androidVr43,
         PlayerClientId.androidVrNoAuth => _androidVrNoAuth,
         PlayerClientId.androidMusic => _androidMusic,
+        PlayerClientId.androidCreator => _androidCreator,
+        PlayerClientId.androidUnplugged => _androidUnplugged,
         PlayerClientId.tvEmbedded => _tvEmbedded,
         PlayerClientId.webRemix => _webMusic,
       };
@@ -880,6 +915,8 @@ enum PlayerClientId {
   androidVr43,
   androidVrNoAuth,
   androidMusic,
+  androidCreator,
+  androidUnplugged,
   tvEmbedded,
   webRemix,
 }
