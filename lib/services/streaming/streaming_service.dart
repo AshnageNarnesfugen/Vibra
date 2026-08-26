@@ -1618,18 +1618,9 @@ class StreamingService {
     // los clientes móviles/VR bot-gated), intentamos WEB_REMIX autenticado +
     // descifrado de firmas vía youtube_explode. Es lo único que reproduce los
     // tracks bot-gated de YT Music (WEB_REMIX acepta la cookie de navegador).
-    try {
-      final url = await _resolveViaExplode(videoId, targetBitrateBps);
-      if (url != null) {
-        _streamCache[videoId] = (
-          url: url,
-          expiresAt: DateTime.now().add(_cacheTtl),
-        );
-        return url;
-      }
-    } catch (e) {
-      errors.add('explode(WEB_REMIX): $e');
-    }
+    // NOTA: el descifrado vía WEB_REMIX está DESACTIVADO — el base.js de 2026
+    // no se puede descifrar con regex (ni NewPipe puede) y el parseo completo
+    // en QuickJS cuelga (>90s). Colgaba la reproducción 90s. Ver diagnóstico.
 
     // Pie de diagnóstico: sin esto es imposible saber si el PoToken llegó o
     // si la sesión está completa. Ayuda a decidir el siguiente paso.
@@ -1702,6 +1693,9 @@ class StreamingService {
   /// porque valida `streams.first` (que suele ser el video 137) con un HEAD y
   /// si ese 403ea tira todo — aunque el audio esté bien. Aquí procesamos solo
   /// el mejor formato de audio y construimos la URL nosotros.
+  // Retirado del flujo (base.js 2026 indescifrable en móvil). Se conserva
+  // por si vuelve a ser viable con otro motor.
+  // ignore: unused_element
   Future<String?> _resolveViaExplode(
     String videoId,
     int targetBitrateBps,
@@ -1837,6 +1831,8 @@ class StreamingService {
           'poToken=${(_client.poToken?.isNotEmpty ?? false) ? "sí" : "no"} '
           'visitorData=${(a?.visitorData?.isNotEmpty ?? false) ? "sí" : "no"} '
           'dataSyncId=${(a?.dataSyncId?.isNotEmpty ?? false) ? "sí" : "no"}')
+      ..writeln('cookie: ${a?.cookie.length ?? 0} chars, nombres: '
+          '${a != null ? (a.parsedCookies.keys.toList()..sort()).join(", ") : "—"}')
       ..writeln('─────────');
     // Probamos la cascada normal + WEB_REMIX al final. WEB_REMIX acepta la
     // cookie de navegador (SAPISIDHASH) que los clientes móviles nativos
@@ -1884,57 +1880,7 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // Prueba end-to-end del descifrado, etapa por etapa (WEB_REMIX + cookie +
-    // solver EJS en isolate). Corre en segundo plano (no congela la UI).
-    buf.writeln('─────────');
-    try {
-      if (!(_client.auth?.isCompleteCookieSession ?? false)) {
-        buf.writeln('descifrado: sin sesión por cookie');
-        return buf.toString();
-      }
-      // base.js url
-      final pjs = await _fetchPlayerJsUrl();
-      buf.writeln('base.js: ${pjs != null ? "OK ✓ ($pjs)" : "NO se obtuvo ✗"}');
-
-      // formatos de audio de WEB_REMIX
-      final wjson =
-          await _client.player(videoId, clientId: PlayerClientId.webRemix);
-      final adaptive = _at(wjson, ['streamingData', 'adaptiveFormats']);
-      final audios = (adaptive is List ? adaptive : const [])
-          .whereType<Map>()
-          .where((f) => (f['mimeType'] as String? ?? '').startsWith('audio'))
-          .toList();
-      buf.writeln('formatos audio WEB_REMIX: ${audios.length}');
-      if (audios.isEmpty) {
-        buf.writeln('descifrado: sin formatos de audio');
-        return buf.toString();
-      }
-
-      // descifrar el mejor y verificar
-      audios.sort((a, b) =>
-          ((b['bitrate'] as num?) ?? 0).compareTo((a['bitrate'] as num?) ?? 0));
-      final det = await decipherFormatDetailed(audios.first);
-      if (det.url == null) {
-        buf.writeln('descifrado: FALLÓ en etapa "${det.stage}"'
-            '${det.error != null ? " — ${det.error}" : ""}'
-            '${det.ms != null ? " (${det.ms}ms)" : ""}');
-        return buf.toString();
-      }
-      if (det.ms != null) buf.writeln('descifrado tardó: ${det.ms}ms');
-      var httpStatus = -1;
-      try {
-        final r = await http.head(Uri.parse(det.url!));
-        httpStatus = r.statusCode;
-      } catch (e) {
-        buf.writeln('descifrado: URL OK, HEAD falló: $e');
-      }
-      buf.writeln(httpStatus == 200
-          ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
-          : 'descifrado: URL descifrada pero HTTP $httpStatus '
-              '(¿falta poToken de media?)');
-    } catch (e) {
-      buf.writeln('descifrado: ERROR $e');
-    }
+    // (El descifrado vía WEB_REMIX se retiró del diagnóstico — colgaba 90s.)
     return buf.toString();
   }
 
