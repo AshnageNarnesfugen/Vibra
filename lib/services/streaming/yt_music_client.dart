@@ -350,18 +350,24 @@ class YtMusicClient {
   Future<Map<String, dynamic>> player(
     String videoId, {
     PlayerClientId clientId = PlayerClientId.iosMusic,
+    int? signatureTimestamp,
   }) async {
     final spec = _resolve(clientId);
-    // Body mínimo, como OpenTune para clientes móviles: `videoId` + context
-    // (+ serviceIntegrityDimensions si hay PoToken). NO mandamos
-    // `playbackContext.contentPlaybackContext.html5Preference`: es un campo
-    // del player WEB y los clientes ANDROID_MUSIC / IOS lo rechazan con 400
-    // "invalid argument" / "precondition check failed". El único
-    // contentPlaybackContext válido para estos sería `signatureTimestamp`,
-    // que solo aplica a WEB (que no usamos porque devuelve URLs cifradas).
     final body = <String, dynamic>{
       'videoId': videoId,
     };
+    // `playbackContext.contentPlaybackContext.signatureTimestamp`: OpenTune lo
+    // manda SIEMPRE que lo tiene (clients con useSignatureTimestamp, como
+    // ANDROID_MUSIC). Su AUSENCIA es lo que hacía que ANDROID_MUSIC/IOS
+    // autenticados devolvieran 400 INVALID_ARGUMENT / FAILED_PRECONDITION.
+    // NO mandamos `html5Preference` (campo del player WEB que los rompe).
+    if (signatureTimestamp != null) {
+      body['playbackContext'] = {
+        'contentPlaybackContext': {
+          'signatureTimestamp': signatureTimestamp,
+        },
+      };
+    }
     // PoToken: Google lo pide para servir el stream sin `LOGIN_REQUIRED`.
     final pot = poToken;
     if (pot != null && pot.isNotEmpty) {

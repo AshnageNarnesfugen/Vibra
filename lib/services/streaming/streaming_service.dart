@@ -1555,10 +1555,17 @@ class StreamingService {
     // se autentican van primero (pasan el bot-check de Google); sin sesión,
     // los ANDROID_VR anónimos primero. Ver YtMusicClient.orderedPlayerClients.
     final clients = _client.orderedPlayerClients();
+    // STS: requerido por los clients nativos autenticados (ANDROID_MUSIC) o
+    // devuelven 400. Best-effort — si no se obtiene, se manda null.
+    final sts = await _fetchSts();
 
     for (final clientId in clients) {
       try {
-        final json = await _client.player(videoId, clientId: clientId);
+        final json = await _client.player(
+          videoId,
+          clientId: clientId,
+          signatureTimestamp: sts,
+        );
 
         // Verificamos si el video es reproducible (vital para invitados).
         // El `reason` del status suele explicar el bloqueo (geo, age-gate,
@@ -1662,6 +1669,29 @@ class StreamingService {
       devLog('[YTM] no se pudo obtener player.js url: $e');
     }
     return null;
+  }
+
+  // signatureTimestamp (STS) del base.js, cacheado. Igual para todos los
+  // videos hasta que YouTube rota el player. OpenTune lo manda en el player
+  // de clientes nativos (ANDROID_MUSIC): sin él → 400 INVALID_ARGUMENT.
+  int? _sts;
+  Future<int?> _fetchSts() async {
+    if (_sts != null) return _sts;
+    try {
+      final url = await _fetchPlayerJsUrl();
+      if (url == null) return null;
+      final res = await http.get(Uri.parse(url));
+      // Regex trivial (NO parseamos el archivo): `signatureTimestamp:12345`
+      // o `sts:12345`.
+      final m = RegExp(r'signatureTimestamp[=:](\d+)').firstMatch(res.body);
+      if (m != null) {
+        _sts = int.tryParse(m.group(1)!);
+        devLog('[YTM] STS=$_sts');
+      }
+    } catch (e) {
+      devLog('[YTM] no se pudo obtener STS: $e');
+    }
+    return _sts;
   }
 
   /// Resuelve el stream de tracks bot-gated: pide los formatos a WEB_REMIX con
@@ -1816,9 +1846,14 @@ class StreamingService {
       ..._client.orderedPlayerClients(),
       PlayerClientId.webRemix,
     ];
+    final diagSts = await _fetchSts();
     for (final clientId in clients) {
       try {
-        final json = await _client.player(videoId, clientId: clientId);
+        final json = await _client.player(
+          videoId,
+          clientId: clientId,
+          signatureTimestamp: diagSts,
+        );
         final status = _at(json, ['playabilityStatus', 'status']);
         final reason = _at(json, ['playabilityStatus', 'reason']);
         final adaptive = _at(json, ['streamingData', 'adaptiveFormats']);
