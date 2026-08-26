@@ -105,13 +105,17 @@ class CipherSolverIsolate {
     final rp = ReceivePort();
     mainSend.send(rp.sendPort);
 
-    JavascriptRuntime? rt;
-    String? loadedFor; // playerUrl del script actualmente cargado
+    // Cacheamos SOLO el script deobfuscado (~5 KB) por URL — NO el runtime.
+    // Creamos un runtime QuickJS FRESCO por cada solve y lo desechamos: así
+    // no se arrastra estado entre tracks (evita bugs de reuso del motor).
+    String? cachedScript;
+    String? cachedForUrl;
 
     await for (final msg in rp) {
       final m = msg as Map;
       final reply = m['reply'] as SendPort;
       final sw = Stopwatch()..start();
+      JavascriptRuntime? rt;
       try {
         final baseUrl = m['playerUrl'] as String;
         // Forzar la variante TCE (ofuscación clásica, extraíble por regex).
@@ -120,9 +124,7 @@ class CipherSolverIsolate {
           '/player_ias_tce.vflset/',
         );
 
-        if (rt == null || loadedFor != tceUrl) {
-          rt?.dispose();
-          rt = null;
+        if (cachedScript == null || cachedForUrl != tceUrl) {
           final resp = await http.get(Uri.parse(tceUrl));
           if (resp.statusCode != 200) {
             reply.send({
@@ -139,33 +141,46 @@ class CipherSolverIsolate {
             });
             continue;
           }
-          rt = getJavascriptRuntime();
-          final ev = rt.evaluate(script);
-          if (ev.isError) {
-            reply.send({
-              'error': 'eval deobf: ${ev.stringResult}',
-              'ms': sw.elapsedMilliseconds
-            });
-            rt.dispose();
-            rt = null;
-            continue;
-          }
-          loadedFor = tceUrl;
-          devLog('[cipher-isolate] deobf cargado (${script.length}b) '
+          cachedScript = script;
+          cachedForUrl = tceUrl;
+          devLog('[cipher-isolate] deobf extraído (${script.length}b) '
               'en ${sw.elapsedMilliseconds}ms');
+        }
+
+        rt = getJavascriptRuntime();
+        final ev = rt.evaluate(cachedScript);
+        if (ev.isError) {
+          reply.send({
+            'error': 'eval deobf: ${ev.stringResult}',
+            'ms': sw.elapsedMilliseconds
+          });
+          continue;
         }
 
         String? outSig;
         String? outN;
+        String? evalErr;
         final rawSig = m['sig'] as String?;
         final rawN = m['n'] as String?;
         if (rawSig != null && rawSig.isNotEmpty) {
           final r = rt.evaluate('__sig(${_jsStr(rawSig)})');
-          if (!r.isError) outSig = r.stringResult;
+          if (r.isError) {
+            evalErr = 'sig eval: ${r.stringResult}';
+          } else {
+            outSig = r.stringResult;
+          }
         }
-        if (rawN != null && rawN.isNotEmpty) {
+        if (evalErr == null && rawN != null && rawN.isNotEmpty) {
           final r = rt.evaluate('__n(${_jsStr(rawN)})');
-          if (!r.isError) outN = r.stringResult;
+          if (r.isError) {
+            evalErr = 'n eval: ${r.stringResult}';
+          } else {
+            outN = r.stringResult;
+          }
+        }
+        if (evalErr != null) {
+          reply.send({'error': evalErr, 'ms': sw.elapsedMilliseconds});
+          continue;
         }
         reply.send({
           'sig': outSig,
@@ -175,6 +190,8 @@ class CipherSolverIsolate {
         });
       } catch (e) {
         reply.send({'error': e.toString(), 'ms': sw.elapsedMilliseconds});
+      } finally {
+        rt?.dispose();
       }
     }
   }
