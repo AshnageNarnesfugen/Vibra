@@ -1898,23 +1898,40 @@ class StreamingService {
         buf.writeln('${clientId.name}: ERROR $e');
       }
     }
-    // Prueba end-to-end del descifrado (WEB_REMIX + funciones TCE en QuickJS).
+    // Prueba end-to-end del descifrado (WEB_REMIX + funciones TCE en QuickJS),
+    // etapa por etapa para ver DÓNDE falla.
     buf.writeln('─────────');
     try {
-      final url = await _resolveViaExplode(videoId, 1 << 30);
-      if (url == null) {
-        buf.writeln('descifrado: no se obtuvo URL');
-      } else {
-        var st = -1;
-        try {
-          st = (await http.head(Uri.parse(url))).statusCode;
-        } catch (e) {
-          buf.writeln('descifrado: URL OK, HEAD falló: $e');
-        }
-        buf.writeln(st == 200
-            ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
-            : 'descifrado: URL descifrada pero HTTP $st');
+      final pjs = await _fetchPlayerJsUrl();
+      buf.writeln('base.js: ${pjs ?? "NO ✗"}');
+      final wjson =
+          await _client.player(videoId, clientId: PlayerClientId.webRemix);
+      final adaptive = _at(wjson, ['streamingData', 'adaptiveFormats']);
+      final audios = (adaptive is List ? adaptive : const [])
+          .whereType<Map>()
+          .where((f) => (f['mimeType'] as String? ?? '').startsWith('audio'))
+          .toList();
+      buf.writeln('formatos audio: ${audios.length}');
+      if (audios.isEmpty) return buf.toString();
+      audios.sort((a, b) =>
+          ((b['bitrate'] as num?) ?? 0).compareTo((a['bitrate'] as num?) ?? 0));
+      final det = await decipherFormatDetailed(audios.first);
+      if (det.url == null) {
+        buf.writeln('descifrado: FALLÓ en "${det.stage}"'
+            '${det.error != null ? " — ${det.error}" : ""}'
+            '${det.ms != null ? " (${det.ms}ms)" : ""}');
+        return buf.toString();
       }
+      buf.writeln('descifrado en ${det.ms}ms');
+      var st = -1;
+      try {
+        st = (await http.head(Uri.parse(det.url!))).statusCode;
+      } catch (e) {
+        buf.writeln('HEAD falló: $e');
+      }
+      buf.writeln(st == 200
+          ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
+          : 'descifrado: URL descifrada pero HTTP $st');
     } catch (e) {
       buf.writeln('descifrado: ERROR $e');
     }
