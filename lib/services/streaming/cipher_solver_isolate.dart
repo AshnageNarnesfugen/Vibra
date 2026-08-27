@@ -4,7 +4,6 @@ import 'dart:isolate';
 import 'package:flutter_js/flutter_js.dart';
 import 'package:http/http.dart' as http;
 
-import '../../core/dev_log.dart';
 import 'cipher_extractor.dart';
 
 /// Descifra `sig`/`n` de las URLs de YouTube en un **isolate en segundo
@@ -63,32 +62,37 @@ class CipherSolverIsolate {
       'sig': sig,
       'n': n,
     });
-    try {
-      final res = await reply.first.timeout(timeout);
-      if (res is Map && res['error'] == null) {
-        return (
+    // El isolate manda mensajes de progreso (`{progress: 'etapa', ms}`) y al
+    // final el resultado (`{sig,n,error,ms}`). Así, si algo se cuelga,
+    // sabemos EN QUÉ etapa fue (el timeout reporta la última alcanzada).
+    final completer = Completer<({String? sig, String? n, String? error, int? ms})>();
+    var lastStage = 'inicio';
+    late final StreamSubscription sub;
+    sub = reply.listen((res) {
+      if (res is Map && res['progress'] != null) {
+        lastStage = '${res['progress']} (${res['ms']}ms)';
+        return;
+      }
+      if (res is Map && !completer.isCompleted) {
+        completer.complete((
           sig: res['sig'] as String?,
           n: res['n'] as String?,
-          error: null,
+          error: res['error'] as String?,
           ms: res['ms'] as int?,
-        );
+        ));
       }
-      final err = res is Map ? '${res['error']}' : '$res';
-      devLog('[cipher-isolate] $err');
-      return (
-        sig: null,
-        n: null,
-        error: err,
-        ms: res is Map ? res['ms'] as int? : null
-      );
+    });
+    try {
+      return await completer.future.timeout(timeout);
     } on TimeoutException {
       return (
         sig: null,
         n: null,
-        error: 'timeout (${timeout.inSeconds}s)',
+        error: 'timeout (${timeout.inSeconds}s) — última etapa: $lastStage',
         ms: null,
       );
     } finally {
+      await sub.cancel();
       reply.close();
     }
   }
@@ -126,6 +130,7 @@ class CipherSolverIsolate {
 
         if (cachedScript == null || cachedForUrl != tceUrl) {
           final resp = await http.get(Uri.parse(tceUrl));
+          reply.send({'progress': 'descargado', 'ms': sw.elapsedMilliseconds});
           if (resp.statusCode != 200) {
             reply.send({
               'error': 'base.js tce HTTP ${resp.statusCode}',
@@ -134,6 +139,7 @@ class CipherSolverIsolate {
             continue;
           }
           final script = buildDeobfuscator(resp.body);
+          reply.send({'progress': 'extraído', 'ms': sw.elapsedMilliseconds});
           if (script == null) {
             reply.send({
               'error': 'no se pudo extraer sig/n del base.js',
@@ -143,12 +149,12 @@ class CipherSolverIsolate {
           }
           cachedScript = script;
           cachedForUrl = tceUrl;
-          devLog('[cipher-isolate] deobf extraído (${script.length}b) '
-              'en ${sw.elapsedMilliseconds}ms');
         }
 
         rt = getJavascriptRuntime();
+        reply.send({'progress': 'runtime', 'ms': sw.elapsedMilliseconds});
         final ev = rt.evaluate(cachedScript);
+        reply.send({'progress': 'script-evaluado', 'ms': sw.elapsedMilliseconds});
         if (ev.isError) {
           reply.send({
             'error': 'eval deobf: ${ev.stringResult}',
@@ -170,6 +176,7 @@ class CipherSolverIsolate {
             outSig = r.stringResult;
           }
         }
+        reply.send({'progress': 'sig-listo', 'ms': sw.elapsedMilliseconds});
         if (evalErr == null && rawN != null && rawN.isNotEmpty) {
           final r = rt.evaluate('__n(${_jsStr(rawN)})');
           if (r.isError) {
@@ -178,6 +185,7 @@ class CipherSolverIsolate {
             outN = r.stringResult;
           }
         }
+        reply.send({'progress': 'n-listo', 'ms': sw.elapsedMilliseconds});
         if (evalErr != null) {
           reply.send({'error': evalErr, 'ms': sw.elapsedMilliseconds});
           continue;
