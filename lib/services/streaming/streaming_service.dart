@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../models/song.dart';
 import 'cipher_solver_isolate.dart';
+import 'po_token.dart';
 import 'yt_auth.dart';
 import 'yt_music_client.dart';
 import '../../core/dev_log.dart';
@@ -1833,6 +1834,17 @@ class StreamingService {
     }
     if (rawSig != null) {
       url = '$url&$sp=${Uri.encodeQueryComponent(solved.sig!)}';
+    }
+    // PoToken (proof-of-origin) en la URL de media: googlevideo devuelve 403
+    // con cuerpo vacío sin él cuando Google endurece el bot-check. Cold-start
+    // token (algorítmico) a partir del visitorData — si YouTube ya no lo
+    // acepta, dará 403 igual y habrá que subir a un token real de BotGuard.
+    if (!url.contains('&pot=')) {
+      final vd = _client.auth?.visitorData;
+      if (vd != null && vd.isNotEmpty) {
+        final pot = PoTokenGenerator.generate(vd);
+        url = '$url&pot=${Uri.encodeQueryComponent(pot)}';
+      }
     }
     return (url: url, stage: 'ok', error: null, ms: solved.ms);
   }
