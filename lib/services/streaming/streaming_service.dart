@@ -1964,6 +1964,24 @@ class StreamingService {
       'MUSIC_VIDEO_TYPE_UGC',
       'MUSIC_VIDEO_TYPE_OFFICIAL_SOURCE_MUSIC',
     };
+
+    // Logueado: como con el audio, los clientes nativos dan 400 y solo
+    // WEB_REMIX sirve — con formatos CIFRADOS. Sacamos el mejor video y lo
+    // desciframos (sig/n). Es el único camino para que el botón de video
+    // funcione con la sesión activa.
+    if (_client.auth?.isCompleteCookieSession ?? false) {
+      try {
+        final r = await _resolveVideoViaWebRemix(
+          videoId,
+          maxHeightPx,
+          allowedVideoTypes,
+        );
+        if (r != null) return r;
+      } catch (_) {
+        // Cae a la cascada normal.
+      }
+    }
+
     final clients = _client.orderedPlayerClients();
     for (final clientId in clients) {
       try {
@@ -1993,6 +2011,72 @@ class StreamingService {
       }
     }
     return null;
+  }
+
+  /// Resuelve el video musical vía WEB_REMIX autenticado + descifrado. Elige
+  /// el mejor formato de video (permitiendo cifrados) y descifra su URL.
+  Future<VideoStreamInfo?> _resolveVideoViaWebRemix(
+    String videoId,
+    int maxHeightPx,
+    Set<String> allowedVideoTypes,
+  ) async {
+    final json =
+        await _client.player(videoId, clientId: PlayerClientId.webRemix);
+    if (_at(json, ['playabilityStatus', 'status']) != 'OK') return null;
+    final mvType = _at(json, ['videoDetails', 'musicVideoType']) as String?;
+    // Sin video real (ATV / podcast) → no hay botón de video.
+    if (mvType == null || !allowedVideoTypes.contains(mvType)) return null;
+
+    final adaptive = _at(json, ['streamingData', 'adaptiveFormats']);
+    final formats = _at(json, ['streamingData', 'formats']);
+    final all = <dynamic>[
+      if (adaptive is List) ...adaptive,
+      if (formats is List) ...formats,
+    ];
+    // Mejor formato de video ≤ tope (acepta cifrados; se descifra después).
+    Map? pick;
+    var pickH = -1;
+    var pickHasAudio = false;
+    Map? over; // mínimo por encima del tope, como fallback
+    var overH = 1 << 30;
+    var overHasAudio = false;
+    for (final f in all) {
+      if (f is! Map) continue;
+      final mime = f['mimeType'];
+      if (mime is! String || !mime.startsWith('video/')) continue;
+      // Debe tener url directa o signatureCipher (para poder resolverla).
+      if (f['url'] == null &&
+          f['signatureCipher'] == null &&
+          f['cipher'] == null) {
+        continue;
+      }
+      final h = (f['height'] as num?)?.toInt() ?? 0;
+      if (h == 0) continue;
+      final hasAudio =
+          f['audioChannels'] != null || f['audioSampleRate'] != null;
+      if (h <= maxHeightPx) {
+        if (h > pickH || (h == pickH && hasAudio && !pickHasAudio)) {
+          pick = f;
+          pickH = h;
+          pickHasAudio = hasAudio;
+        }
+      } else {
+        if (h < overH || (h == overH && hasAudio && !overHasAudio)) {
+          over = f;
+          overH = h;
+          overHasAudio = hasAudio;
+        }
+      }
+    }
+    final chosen = pick ?? over;
+    if (chosen == null) return null;
+
+    final url = await _decipherFormatUrl(chosen);
+    if (url == null) return null;
+    return VideoStreamInfo(
+      url: url,
+      hasAudio: pick != null ? pickHasAudio : overHasAudio,
+    );
   }
 
   /// Filtra el mejor format de video respetando [maxHeight] (el tope de
