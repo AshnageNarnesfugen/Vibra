@@ -143,9 +143,17 @@ class _PlayerScreenState extends State<PlayerScreen>
             onPressed: () => Navigator.of(context).maybePop(),
           ),
         ),
+        // Título en UNA sola línea: con muchos iconos de acción en portrait
+        // el área del título se estrecha y, sin esto, Flutter parte la palabra
+        // ("Reproducie\nndo"). `softWrap:false` + fade la mantiene en una línea
+        // y la desvanece con gracia si de verdad no cabe (en vez de romperla).
+        titleSpacing: 0,
         title: AdaptiveColor(
           builder: (context, color) => Text(
             t.nowPlaying,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
             style: TextStyle(
               color: color,
               fontSize: 17,

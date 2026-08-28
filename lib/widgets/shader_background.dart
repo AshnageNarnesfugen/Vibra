@@ -119,17 +119,24 @@ class _ShaderBackgroundState extends State<ShaderBackground>
             const Color(0xFF101015),
       );
     }
-    return CustomPaint(
-      painter: _ShaderPainter(
-        program: program,
-        time: _time,
-        speed: widget.speed,
-        color1: _safe(widget.palette1, widget.shader, 0),
-        color2: _safe(widget.palette2, widget.shader, 1),
-        color3: _safe(widget.palette3, widget.shader, 2),
-        paletteAware: widget.shader.paletteAware,
+    // RepaintBoundary: el shader repinta CADA frame (Ticker). Sin este
+    // aislamiento su capa se fusiona con la del contenido y obliga a repintar
+    // el árbol entero de arriba (listas, cards) en cada tick — el origen del
+    // scroll "torpe". Con el boundary, el shader vive en su propia capa GPU y
+    // el scroll repinta independiente.
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _ShaderPainter(
+          program: program,
+          time: _time,
+          speed: widget.speed,
+          color1: _safe(widget.palette1, widget.shader, 0),
+          color2: _safe(widget.palette2, widget.shader, 1),
+          color3: _safe(widget.palette3, widget.shader, 2),
+          paletteAware: widget.shader.paletteAware,
+        ),
+        size: Size.infinite,
       ),
-      size: Size.infinite,
     );
   }
 
