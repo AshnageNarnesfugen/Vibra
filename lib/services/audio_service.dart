@@ -13,12 +13,20 @@ import '../core/dev_log.dart';
 /// para que `EqualizerController` los pueda manipular. En otras plataformas
 /// no agregamos effects (just_audio los ignora silenciosamente).
 class AudioService {
+  /// Cuando es true, el pipeline se construye SIN efectos de audio
+  /// (equalizer/loudness). Lo setea `main()` desde
+  /// `settings.audioEffectsDisabled` ANTES del primer acceso a [instance].
+  /// Auto-recuperación: si el AndroidEqualizer crashea la reproducción (NPE en
+  /// getNumberOfBands, incompatibilidad de algunos dispositivos), la app
+  /// persiste el flag y al reiniciar arranca sin efectos → reproduce bien.
+  static bool effectsDisabled = false;
+
   AudioService._() {
     final isAndroid = !kIsWeb && Platform.isAndroid;
     // Los effects son singleton de proceso — los creamos UNA vez y los
     // referenciamos desde el EqualizerController. Sin esto, cualquier
     // reset del player perdería los parámetros del EQ.
-    if (isAndroid) {
+    if (isAndroid && !effectsDisabled) {
       equalizer = AndroidEqualizer();
       loudnessEnhancer = AndroidLoudnessEnhancer();
       player = AudioPlayer(

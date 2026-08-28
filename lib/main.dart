@@ -108,6 +108,10 @@ Future<void> main() async {
     devLog('Parallax start skipped: $e');
   }
 
+  // Si en una sesión anterior el AndroidEqualizer crasheó la reproducción,
+  // arrancamos el pipeline SIN efectos (auto-recuperación). Debe setearse
+  // ANTES del primer acceso a AudioService.instance.
+  AudioService.effectsDisabled = settings.value.audioEffectsDisabled;
   final audio = AudioService.instance;
   try {
     await audio.ensureInitialized().timeout(

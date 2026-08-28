@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/settings/settings_controller.dart';
 import '../../core/settings/ui_settings.dart';
 import '../../core/theme/layout_tokens.dart';
 import '../../providers/equalizer_controller.dart';
@@ -22,6 +23,9 @@ class EqualizerScreen extends StatelessWidget {
     final eq = context.watch<EqualizerController>();
 
     if (!eq.available) {
+      // Caso especial: efectos AUTO-DESACTIVADOS tras un crash del equalizer
+      // nativo en este dispositivo. Distinto de "no soportado" (iOS/desktop).
+      final autoDisabled = UiSettingsScope.of(context).audioEffectsDisabled;
       return StableBackdropGroup(
         child: Scaffold(
           backgroundColor: Colors.transparent,
@@ -29,10 +33,38 @@ class EqualizerScreen extends StatelessWidget {
           body: Center(
             child: Padding(
               padding: tokens.pagePadding(),
-              child: const Text(
-                'El ecualizador solo está disponible en Android. '
-                'iOS y escritorio usan rutas de audio distintas.',
-                textAlign: TextAlign.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    autoDisabled
+                        ? 'Los efectos de audio se desactivaron porque el '
+                            'ecualizador de tu dispositivo causó un error de '
+                            'reproducción. Puedes intentar reactivarlos — si '
+                            'vuelve a fallar, se desactivarán de nuevo solos.'
+                        : 'El ecualizador solo está disponible en Android. '
+                            'iOS y escritorio usan rutas de audio distintas.',
+                    textAlign: TextAlign.center,
+                  ),
+                  if (autoDisabled) ...[
+                    SizedBox(height: tokens.gap),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Reactivar efectos (reinicia la app)'),
+                      onPressed: () {
+                        context.read<SettingsController>().update(
+                              (s) => s.copyWith(audioEffectsDisabled: false),
+                            );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Efectos reactivados. Reinicia la app para aplicar.'),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ],
               ),
             ),
           ),

@@ -200,6 +200,7 @@ class UiSettings {
     this.playbackPitchSemitones = 0.0,
     this.lockPitchToSpeed = false,
     this.bitPerfectModeEnabled = false,
+    this.audioEffectsDisabled = false,
     this.audioQualityWifi = MediaQuality.high,
     this.audioQualityCellular = MediaQuality.medium,
     this.videoQualityWifi = MediaQuality.high,
@@ -308,6 +309,12 @@ class UiSettings {
   /// valores neutrales cuando este toggle está ON — el usuario no puede
   /// activar EQ mientras bit-perfect está prendido.
   final bool bitPerfectModeEnabled;
+
+  /// Efectos de audio (equalizer/loudness) DESACTIVADOS por incompatibilidad
+  /// del dispositivo. Se activa solo cuando el AndroidEqualizer crashea la
+  /// reproducción (NPE en getNumberOfBands) — auto-recuperación: al reiniciar,
+  /// el pipeline se construye sin efectos y la reproducción funciona.
+  final bool audioEffectsDisabled;
 
   /// Calidad de stream cuando hay conexión WiFi. Default high.
   final MediaQuality audioQualityWifi;
@@ -553,6 +560,7 @@ class UiSettings {
     double? playbackPitchSemitones,
     bool? lockPitchToSpeed,
     bool? bitPerfectModeEnabled,
+    bool? audioEffectsDisabled,
     MediaQuality? audioQualityWifi,
     MediaQuality? audioQualityCellular,
     MediaQuality? videoQualityWifi,
@@ -628,6 +636,8 @@ class UiSettings {
       lockPitchToSpeed: lockPitchToSpeed ?? this.lockPitchToSpeed,
       bitPerfectModeEnabled:
           bitPerfectModeEnabled ?? this.bitPerfectModeEnabled,
+      audioEffectsDisabled:
+          audioEffectsDisabled ?? this.audioEffectsDisabled,
       audioQualityWifi: audioQualityWifi ?? this.audioQualityWifi,
       audioQualityCellular:
           audioQualityCellular ?? this.audioQualityCellular,
@@ -731,6 +741,7 @@ class UiSettings {
         'playbackPitchSemitones': playbackPitchSemitones,
         'lockPitchToSpeed': lockPitchToSpeed,
         'bitPerfectModeEnabled': bitPerfectModeEnabled,
+        'audioEffectsDisabled': audioEffectsDisabled,
         'audioQualityWifi': audioQualityWifi.name,
         'audioQualityCellular': audioQualityCellular.name,
         'videoQualityWifi': videoQualityWifi.name,
@@ -808,6 +819,7 @@ class UiSettings {
               .clamp(-12.0, 12.0),
       lockPitchToSpeed: m['lockPitchToSpeed'] as bool? ?? false,
       bitPerfectModeEnabled: m['bitPerfectModeEnabled'] as bool? ?? false,
+      audioEffectsDisabled: m['audioEffectsDisabled'] as bool? ?? false,
       audioQualityWifi: MediaQuality.values.firstWhere(
         (e) => e.name == m['audioQualityWifi'],
         orElse: () => MediaQuality.high,

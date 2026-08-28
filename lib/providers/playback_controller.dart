@@ -836,13 +836,31 @@ class PlaybackController extends ChangeNotifier {
       _prefetchNext();
     } catch (e) {
       devLog('play error: $e');
-      // Surfaceamos el error a la UI: SnackBar con mensaje corto + detalle
-      // completo copiable (la cascada de clientes puede acumular varios
-      // errores y el texto no cabe en el SnackBar).
-      final prefix = song.isStreaming
-          ? 'No se pudo reproducir desde YouTube Music: '
-          : 'No se pudo reproducir el archivo: ';
-      _emitError('$prefix${_short(e)}', detail: '$prefix${e.toString()}');
+      // Auto-recuperación del ecualizador: en algunos dispositivos el
+      // AndroidEqualizer nativo es null y just_audio revienta con NPE en
+      // `getNumberOfBands` al adjuntar el efecto → mata la reproducción. Si
+      // detectamos ese error, desactivamos los efectos de audio (persistido)
+      // y pedimos reiniciar; en el próximo arranque el pipeline va sin
+      // efectos y reproduce bien.
+      final es = e.toString();
+      if (!settings.value.audioEffectsDisabled &&
+          (es.contains('getNumberOfBands') ||
+              es.contains('audiofx') ||
+              es.contains('Equalizer'))) {
+        settings.update((s) => s.copyWith(audioEffectsDisabled: true));
+        _emitError(
+          'El ecualizador no es compatible con tu dispositivo — se desactivó. '
+          'Reinicia la app para reproducir con normalidad.',
+        );
+      } else {
+        // Surfaceamos el error a la UI: SnackBar con mensaje corto + detalle
+        // completo copiable (la cascada de clientes puede acumular varios
+        // errores y el texto no cabe en el SnackBar).
+        final prefix = song.isStreaming
+            ? 'No se pudo reproducir desde YouTube Music: '
+            : 'No se pudo reproducir el archivo: ';
+        _emitError('$prefix${_short(e)}', detail: '$prefix${e.toString()}');
+      }
     } finally {
       _loading = false;
       notifyListeners();
