@@ -507,7 +507,17 @@ class _BaseLayer extends StatelessWidget {
     // los cambios de modo bg (que es exactamente cuando se quejaba
     // el stuttering).
     Widget output = switcher;
-    if (settings.blurEnabled && settings.blurIntensity > 0) {
+    // Blur del fondo. **NO** se aplica sobre el shader animado: sería un
+    // BackdropFilter a pantalla completa RE-DIFUMINANDO en cada frame (el
+    // shader repinta cada frame) → el mayor costo de GPU del modo estético y
+    // el culpable del scroll "torpe". Además es redundante: el shader ya es un
+    // degradado suave y el render a media resolución (upscale bilineal) ya lo
+    // ablanda. Para imagen/carátula sí se aplica (ahí sí suaviza la foto).
+    final isAnimatedShader =
+        settings.backgroundMode == BackgroundMode.animatedGradient;
+    if (settings.blurEnabled &&
+        settings.blurIntensity > 0 &&
+        !isAnimatedShader) {
       output = Stack(
         fit: StackFit.expand,
         children: [

@@ -95,9 +95,19 @@ class _ShaderBackgroundState extends State<ShaderBackground>
     }
   }
 
+  // Límite a ~60fps: en pantallas de 120Hz el Ticker dispara 120/s, pero un
+  // fondo ambiental lento no gana nada con eso — solo quema GPU y roba budget
+  // al scroll. Solo actualizamos el tiempo (→ repaint del shader) si pasaron
+  // ≥15.5ms desde el último. Imperceptible en el degradado, ~2× menos draws.
+  static const _frameIntervalUs = 15500; // ~64.5 fps
+  int _lastUpdateUs = -1;
+
   void _onTick(Duration elapsed) {
     if (_start == Duration.zero) _start = elapsed;
-    _time.value = (elapsed - _start).inMicroseconds / 1e6;
+    final us = (elapsed - _start).inMicroseconds;
+    if (_lastUpdateUs >= 0 && us - _lastUpdateUs < _frameIntervalUs) return;
+    _lastUpdateUs = us;
+    _time.value = us / 1e6;
   }
 
   @override
@@ -119,23 +129,52 @@ class _ShaderBackgroundState extends State<ShaderBackground>
             const Color(0xFF101015),
       );
     }
-    // RepaintBoundary: el shader repinta CADA frame (Ticker). Sin este
-    // aislamiento su capa se fusiona con la del contenido y obliga a repintar
-    // el árbol entero de arriba (listas, cards) en cada tick — el origen del
-    // scroll "torpe". Con el boundary, el shader vive en su propia capa GPU y
-    // el scroll repinta independiente.
+    // ── Render scale (truco de videojuegos) ──
+    // Un shader de fondo es per-píxel: a resolución completa × 120fps es
+    // carísimo. Lo renderizamos a MEDIA resolución (0.5) en su propia capa
+    // (RepaintBoundary rasteriza a esa res) y la escalamos ×2 con un blit
+    // bilineal barato en GPU → ~4× menos invocaciones de fragmento. Para un
+    // degradado ambiental suave es visualmente idéntico. Es el mayor ahorro
+    // de GPU disponible y lo que hace que el scroll corra "como mantequilla".
+    const scale = 0.5;
     return RepaintBoundary(
-      child: CustomPaint(
-        painter: _ShaderPainter(
-          program: program,
-          time: _time,
-          speed: widget.speed,
-          color1: _safe(widget.palette1, widget.shader, 0),
-          color2: _safe(widget.palette2, widget.shader, 1),
-          color3: _safe(widget.palette3, widget.shader, 2),
-          paletteAware: widget.shader.paletteAware,
-        ),
-        size: Size.infinite,
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth.isFinite
+              ? c.maxWidth
+              : MediaQuery.sizeOf(context).width;
+          final h = c.maxHeight.isFinite
+              ? c.maxHeight
+              : MediaQuery.sizeOf(context).height;
+          final lowW = (w * scale).ceilToDouble();
+          final lowH = (h * scale).ceilToDouble();
+          return Transform.scale(
+            scale: 1 / scale,
+            alignment: Alignment.topLeft,
+            filterQuality: FilterQuality.low, // bilineal al upscalear
+            child: SizedBox(
+              width: lowW,
+              height: lowH,
+              // RepaintBoundary interno: fuerza que el shader se rasterice a
+              // la resolución BAJA (lowW×lowH) antes de que Transform lo
+              // escale — sin esto el shader correría a full res igual.
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _ShaderPainter(
+                    program: program,
+                    time: _time,
+                    speed: widget.speed,
+                    color1: _safe(widget.palette1, widget.shader, 0),
+                    color2: _safe(widget.palette2, widget.shader, 1),
+                    color3: _safe(widget.palette3, widget.shader, 2),
+                    paletteAware: widget.shader.paletteAware,
+                  ),
+                  size: Size(lowW, lowH),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -172,9 +211,14 @@ class _ShaderPainter extends CustomPainter {
   final Color color3;
   final bool paletteAware;
 
+  // Un solo FragmentShader reutilizado entre frames — antes se creaba uno
+  // NUEVO en cada paint() (60-120/s): GC extra y fuga. Los uniforms se
+  // reescriben cada frame; la instancia se reusa.
+  ui.FragmentShader? _shader;
+
   @override
   void paint(Canvas canvas, Size size) {
-    final shader = program.fragmentShader();
+    final shader = _shader ??= program.fragmentShader();
     // El ORDEN de setFloat sigue el orden de declaración de uniforms en
     // cada .frag. Importante: shaders NO paletteAware (liquid) NO declaran
     // u_color1/2/3 → solo tienen u_resolution(2) + u_time(1) + u_speed(1)
