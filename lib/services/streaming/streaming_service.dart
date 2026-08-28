@@ -1823,15 +1823,18 @@ class StreamingService {
       return (url: null, stage: 'sig no resuelta', error: null, ms: solved.ms);
     }
 
-    final qp = Map<String, String>.from(baseUri.queryParameters);
-    if (rawSig != null) qp[sp!] = solved.sig!;
-    if (rawN != null && solved.n != null) qp['n'] = solved.n!;
-    return (
-      url: baseUri.replace(queryParameters: qp).toString(),
-      stage: 'ok',
-      error: null,
-      ms: solved.ms,
-    );
+    // Construcción por STRING (NO Uri.replace): googlevideo verifica la firma
+    // sobre los parámetros con su codificación EXACTA. Re-codificar toda la
+    // query (lo que hace Uri.replace) los altera → 403. Solo intercambiamos
+    // `n` (valor url-safe, aparece literal) y anexamos la firma codificada.
+    var url = base;
+    if (rawN != null && rawN.isNotEmpty && solved.n != null) {
+      url = url.replaceFirst('n=$rawN', 'n=${solved.n}');
+    }
+    if (rawSig != null) {
+      url = '$url&$sp=${Uri.encodeQueryComponent(solved.sig!)}';
+    }
+    return (url: url, stage: 'ok', error: null, ms: solved.ms);
   }
 
   /// Diagnóstico crudo del endpoint `player`: corre CADA cliente de la
@@ -1924,13 +1927,24 @@ class StreamingService {
       }
       buf.writeln('descifrado en ${det.ms}ms');
       var st = -1;
+      // GET con Range (como ExoPlayer) — un HEAD plano da falsos 403 en
+      // googlevideo. Capturamos el cuerpo si no es 200/206 (dice el motivo).
       try {
-        st = (await http.head(Uri.parse(det.url!))).statusCode;
+        final req = http.Request('GET', Uri.parse(det.url!))
+          ..headers['Range'] = 'bytes=0-1';
+        final resp =
+            await http.Client().send(req).timeout(const Duration(seconds: 15));
+        st = resp.statusCode;
+        if (st != 200 && st != 206) {
+          final body = await resp.stream.bytesToString();
+          final snippet = body.length > 220 ? body.substring(0, 220) : body;
+          buf.writeln('  cuerpo $st: $snippet');
+        }
       } catch (e) {
-        buf.writeln('HEAD falló: $e');
+        buf.writeln('GET falló: $e');
       }
-      buf.writeln(st == 200
-          ? 'descifrado: OK → audio reproducible (HTTP 200) ✓✓'
+      buf.writeln((st == 200 || st == 206)
+          ? 'descifrado: OK → audio reproducible (HTTP $st) ✓✓'
           : 'descifrado: URL descifrada pero HTTP $st');
     } catch (e) {
       buf.writeln('descifrado: ERROR $e');
